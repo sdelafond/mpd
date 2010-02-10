@@ -72,19 +72,18 @@ def showhelp():
     print "    Back and forward slashes must be escaped in playlist rules (except things like \d, obviously).\n"
     sys.exit()
 
+KEYWORDS = {"ar" : "Artist",
+            "al" : "Album",
+            "ti" : "Title",
+            "tn" : "Track",
+            "ge" : "Genre",
+            "ye" : "Date",
+            "le" : "Time",
+            "fp" : "file",
+            "fn" : "key",
+            "mt" : "mtime"}
 
 class Rule:
-    KEYWORDS = {"ar" : "Artist",
-                "al" : "Album",
-                "ti" : "Title",
-                "tn" : "Track",
-                "ge" : "Genre",
-                "ye" : "Date",
-                "le" : "Time",
-                "fp" : "file",
-                "fn" : "key",
-                "mt" : "mtime"}
-
     def __init__(self, key, operator, delimiter, value, flags):
         self.key = key
         self.operator = operator
@@ -108,10 +107,16 @@ class Rule:
         return "%(key)s%(operator)s%(delimiter)s%(value)s%(delimiter)s, with flags: %(flags)s" % self.__dict__
 
     def match(self, track):
-        matched = self.regex.search(track[self.KEYWORDS[self.key]])
+        matched = self.regex.search(getattr(track, KEYWORDS[self.key].lower()))
         if self.negate:
             matched = not matched
         return matched
+
+class Track:
+    def __init__(self):
+        # create a track object with only empty attributes
+        for key in KEYWORDS.values():
+            setattr(self, key.lower(), "")
         
 def parserules(rulestr):
     """ Parse the rules regex """
@@ -199,29 +204,31 @@ def parseargs():
 def parsedatabase(database):
     global tracks
     
-    i        = -1
-    parsing  = False
+    parsing = False
 
     for line in database:
-        # For every line in the database, remove any whitespace at the beginning and end so the script isn't buggered.
+        # For every line in the database, remove any whitespace at the
+        # beginning and end so the script isn't buggered.
         line = line.strip()
 
-        # If entering a songList, start parsing. If exiting one, stop. Fairly self explanatory.
-        if not parsing and line == "songList begin":
+        # If entering a songList, start parsing
+        if line == "songList begin":
             parsing = True
-        elif parsing and line == "songList end":
+            continue
+        if line == "songList end":
             parsing = False
+            continue
+        
+        if parsing: # we're in parsing mode
+            if line.startswith("key: "):
+                # add an empty Track object if we hit the beginning of a track
+                tracks.append(Track())
 
-        # If we get a line to parse which is not a "songList begin" statement (because it's be stupid to do things with that)
-        if parsing and not line == "songList begin":
-            if line[0:5] == "key: ":
-                i += 1
-                # Increment the counter and make an empty dictionary if we hit the beginning of a track
-                tracks.append({"key" : "", "file" : "", "Time" : "", "Genre" : "", "Title" : "", "Artist" : "", "Date" : "", "Album" : "", "Track" : "", "mtime" : ""})
-
-            # Split the line by the first ": ", the string MPD uses, and stick the second part (the value) in the bit of the dictionary referred to by the first part (the key)
-            splitted = line.split(": ", 1)
-            tracks[i][splitted[0]] = splitted[1]
+            # Split the line by the first ": " (the string MPD uses) and stick
+            # the second part (the value) in the Track object's attribute
+            # whose name is the first part (the key)
+            key, value = line.split(": ", 1)
+            setattr(tracks[-1], key.lower(), value)
 
 # Grabbing stuff from the MPD config, a very important step
 def parsempdconf():
@@ -264,18 +271,19 @@ def parsempdconf():
     if "~" in mpd["db_file"]:
         mpd["db_file"] = mpd["db_file"].replace("~", homedir)
 
-def findtracks():
-    global tracks
-    global newrules
-    
+def findtracks(tracks, newrules):
     # matchingtracks will hold all tracks which match all of the criteria.
     matchingtracks = []
     
     for track in tracks:
-         # For every track, check it with every rule
+        # For every track, check it with every rule
+        toAdd = True
         for rule in newrules:
             if not rule.match(track): # Add the track if appropriate
-                continue
+                toAdd = False
+                break
+
+        if toAdd:
             matchingtracks.append(track)
 
     return matchingtracks
@@ -286,7 +294,7 @@ def genplaylist(tracks):
     playlist = ""
     
     for track in tracks:
-        playlist += mpd["music_directory"] + "/" + track["file"] + "\n"
+        playlist += mpd["music_directory"] + "/" + track.file + "\n"
 
     return playlist
 
@@ -319,12 +327,12 @@ def saveplaylist():
     global datapath
     global simpleoutput
     
-    matchingtracks = findtracks()
+    matchingtracks = findtracks(tracks, newrules)
     playlist = genplaylist(matchingtracks)
 
     if simpleoutput:
         for track in matchingtracks:
-            print track["file"]
+            print track.file
     else:
         print "Saving playlist '" + newname + "'."
         
@@ -391,7 +399,8 @@ else:
         print "Loading database cache..."
     # Open it for reading, load the stuff in the file into the tracks list, close the file handler, and have a party.
     tracks = loadgubbage(cachepath)
-    
+    if tracks and type(tracks[-1]) == type({}):
+        raise "Restoring from old cache won't work, use -f."
 # See if we're making a new playlist or not
 if not newname == "":
     # We are, go go go!
