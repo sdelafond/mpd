@@ -4,7 +4,7 @@
 # Now with patronising comments which assume almost no Python knowledge!
 
 # cPickle is a faster version of the pickle library. It is used to save data structures to a file. Like lists and dictionaries. os is needed for file stuff, sys for arguments, and re for regex.
-import cPickle, os, sys, re
+import cPickle, datetime, operator, os, sys, re, time
 
 # Info about new playlists
 newname  = ""
@@ -83,7 +83,7 @@ KEYWORDS = {"ar" : "Artist",
             "fn" : "key",
             "mt" : "mtime"}
 
-class Rule:
+class AbstractRule:
     def __init__(self, key, operator, delimiter, value, flags):
         self.key = key
         self.operator = operator
@@ -93,25 +93,101 @@ class Rule:
             self.flags = tuple(flags)
         else:
             self.flags = ()
+        self.negate = 'n' in self.flags
 
+    def __repr__(self):
+        return "%(key)s%(operator)s%(delimiter)s%(value)s%(delimiter)s, with flags: %(flags)s" % self.__dict__
+
+    def getOperator(self):
+        return self.OPERATORS[self.operator]
+    
+    def match(self, track):
+        value = getattr(track, KEYWORDS[self.key].lower())
+        matched = self.__match__(value)
+
+        if self.negate:
+            matched = not matched
+        return matched
+    
+class RegexRule(AbstractRule):
+    OPERATORS = { '=' : re.search }
+    
+    def __init__(self, key, operator, delimiter, value, flags):
+        AbstractRule.__init__(self, key, operator,
+                              delimiter, value, flags)
         if 'i' in self.flags:
             self.reFlags = re.IGNORECASE
         else:
             self.reFlags = 0
 
-        self.negate = 'n' in self.flags
-
-        self.regex = re.compile(self.value, self.reFlags)
+    def __match__(self, value):
+        return self.getOperator()(self.value, value, self.reFlags)
         
-    def __repr__(self):
-        return "%(key)s%(operator)s%(delimiter)s%(value)s%(delimiter)s, with flags: %(flags)s" % self.__dict__
+class TimeDeltaRule(AbstractRule):
+    OPERATORS = { '=' : operator.eq,
+                  '<' : operator.le,
+                  '>' : operator.ge }
+    
+    TIME_DELTA_REGEX = r'(?P<number>\d+)\s*(?P<unit>\w+)'
 
-    def match(self, track):
-        matched = self.regex.search(getattr(track, KEYWORDS[self.key].lower()))
-        if self.negate:
-            matched = not matched
-        return matched
+    def __init__(self, key, operator, delimiter, value, flags):
+        AbstractRule.__init__(self, key, operator,
+                              delimiter, value, flags)
+        
+        m = re.match(self.TIME_DELTA_REGEX, self.value)
+        if not m:
+            raise Exception("Could not parse duration")
+        d = m.groupdict()
+        self.number = int(d['number'])
+        self.unit = d['unit'].lower()
+        if not self.unit.endswith('s'):
+            self.unit += 's'
 
+        self.timeDelta = datetime.timedelta(**{self.unit : self.number})
+        self.value = self.timeDelta.seconds
+
+    def __match__(self, value):
+        return self.getOperator()(int(value), self.value)
+
+class TimeStampRule(AbstractRule):
+    OPERATORS = { '=' : operator.eq,
+                  '<' : operator.le,
+                  '>' : operator.ge }
+    
+    TIME_STAMP_FORMAT = '%Y-%m-%d'
+
+    def __init__(self, key, operator, delimiter, value, flags):
+        AbstractRule.__init__(self, key, operator,
+                              delimiter, value, flags)
+        
+        ts = time.strptime(self.value, self.TIME_STAMP_FORMAT)
+        self.value = time.mktime(ts)
+
+    def __match__(self, value):
+        # round down to the precision of TIME_STAMP_FORMAT before comparing
+        value = time.gmtime(float(value))
+        value = time.strftime(self.TIME_STAMP_FORMAT, value)        
+        value = time.mktime(time.strptime(value, self.TIME_STAMP_FORMAT))
+        return self.getOperator()(value, self.value)
+
+class RuleFactory:
+    DELIMITER_TO_RULES = { '/' : RegexRule,
+                           '%' : TimeDeltaRule,
+                           '@' : TimeStampRule }
+
+    @staticmethod
+    def getRule(ruleString):
+        m = re.match(r'(?P<key>\w+)(?P<operator>.)(?P<delimiter>[' +
+                     ''.join(RuleFactory.DELIMITER_TO_RULES.keys()) +
+                     r'])(?P<value>.+)\3(?P<flags>\w+)?',
+                     ruleString)
+        if not m:
+            raise Exception("Could not parse rule '%s'" % (ruleString,))
+
+        d = m .groupdict()
+        ruleClass = RuleFactory.DELIMITER_TO_RULES[d['delimiter']]
+        return ruleClass(**d)
+        
 class Track:
     def __init__(self):
         # create a track object with only empty attributes
@@ -123,12 +199,9 @@ def parserules(rulestr):
 
     rules = [] # our list of rules
 
-    for token in re.split(r'\s+', rulestr):
-        m = re.match(r'(?P<key>\w+)(?P<operator>.)(?P<delimiter>[/\|])(?P<value>.+)\3(?P<flags>\w+)?', token)
-        if not m:
-            raise "Could not parse rule '%s'" % (token,)
-        rules.append(Rule(**m.groupdict()))
-
+    for token in re.split(r'\s+', rulestr): # FIXME: allow for space in values
+        rules.append(RuleFactory.getRule(token))
+        
     return rules
 
 # Splitting things up into functions is good :D
@@ -400,7 +473,7 @@ else:
     # Open it for reading, load the stuff in the file into the tracks list, close the file handler, and have a party.
     tracks = loadgubbage(cachepath)
     if tracks and type(tracks[-1]) == type({}):
-        raise "Restoring from old cache won't work, use -f."
+        raise Exception("Restoring from old cache won't work, use -f.")
 # See if we're making a new playlist or not
 if not newname == "":
     # We are, go go go!
