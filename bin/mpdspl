@@ -72,60 +72,57 @@ def showhelp():
     print "    Back and forward slashes must be escaped in playlist rules (except things like \d, obviously).\n"
     sys.exit()
 
-# Parse the rules regex
-def parserules(rulestr):
-    # rules will be our list of rules, bufferstr will be the buffer for our parser, i will be a counter, and inregex will be to stop silly things happening
-    rules     = []
-    bufferstr = ""
-    i         = 0
-    inregex   = False
-    
-    # We want to use the same identifiers as the track dictionaries:
-    keywords = {"ar" : "Artist", "al" : "Album", "ti" : "Title", "tn" : "Track", "ge" : "Genre", "ye" : "Date", "le" : "Time", "fp" : "file", "fn" : "key"}
 
-    # For every character in rulestr (we do it characterwise, hence needing a buffer)
-    for c in rulestr:
-        # Add the character to the buffer
-        bufferstr += c
+class Rule:
+    KEYWORDS = {"ar" : "Artist",
+                "al" : "Album",
+                "ti" : "Title",
+                "tn" : "Track",
+                "ge" : "Genre",
+                "ye" : "Date",
+                "le" : "Time",
+                "fp" : "file",
+                "fn" : "key",
+                "mt" : "mtime"}
 
-        # If set to 'n' and the previous regex has been set, negate it.
-        if bufferstr == "n" and not rules[i - 1]["regex"] == "" and not inregex:
-            bufferstr = ""
-            rules[i - 1]["negate"] = True
-        # If the buffer matches one of our keywords, we have hit a new rule, and so create a blank dictionary, and clear the buffer.
-        elif bufferstr.strip().lower() in keywords.keys() and not inregex:
-            rules.append({"type" : keywords[bufferstr.strip()], "regex" : "", "compiled" : None, "i" : False, "negate" : False})
-            bufferstr = ""
-        # If we're at the start of a blank case-insensitive regex, record that, and clear the buffer.
-        elif bufferstr == "=i/":
-            rules[i]["i"] = True
-            inregex = True
-            bufferstr = ""
-        # If not, just clear the buffer for the coming regex.
-        elif bufferstr == "=/":
-            inregex = True
-            bufferstr = ""
-        # If at the end of a regex, stick it all (sans the trailing slash, they're just a nice separater for our parser) to the dictionary, increment the counter, and clear the buffer ready for the next rule.
-        elif bufferstr[-1] == "/" and not bufferstr[-2] == "\\":
-            inregex = False
-            rules[i]["regex"] = bufferstr[:-1]
-            bufferstr = ""
-            i += 1
-        # Get rid of the escape backslash if a forward slash has been used.
-        elif bufferstr[-1] == "/" and not bufferstr[-2] == "\\":
-            bufferstr[-2] = ""
-
-    # This isn't needed. But it makes things faster and allows us to have case insensetivity.
-    for rule in rules:
-        regex = None
-        if rule["i"]:
-            # If case insensitive, compile it as such.
-            regex = re.compile(rule["regex"], re.IGNORECASE)
+    def __init__(self, key, operator, delimiter, value, flags):
+        self.key = key
+        self.operator = operator
+        self.delimiter = delimiter
+        self.value = value
+        if flags:
+            self.flags = tuple(flags)
         else:
-            regex = re.compile(rule["regex"])
+            self.flags = ()
 
-        # Overwrite the regex string with the compiled object
-        rule["compiled"] = regex
+        if 'i' in self.flags:
+            self.reFlags = re.IGNORECASE
+        else:
+            self.reFlags = 0
+
+        self.negate = 'n' in self.flags
+
+        self.regex = re.compile(self.value, self.reFlags)
+        
+    def __repr__(self):
+        return "%(key)s%(operator)s%(delimiter)s%(value)s%(delimiter)s, with flags: %(flags)s" % self.__dict__
+
+    def match(self, track):
+        matched = self.regex.search(track[self.KEYWORDS[self.key]])
+        if self.negate:
+            matched = not matched
+        return matched
+        
+def parserules(rulestr):
+    """ Parse the rules regex """
+
+    rules = [] # our list of rules
+
+    for token in re.split(r'\s+', rulestr):
+        m = re.match(r'(?P<key>\w+)(?P<operator>.)(?P<delimiter>[/\|])(?P<value>.+)\3(?P<flags>\w+)?', token)
+        if not m:
+            raise "Could not parse rule '%s'" % (token,)
+        rules.append(Rule(**m.groupdict()))
 
     return rules
 
@@ -275,22 +272,10 @@ def findtracks():
     matchingtracks = []
     
     for track in tracks:
-        # Initially assume a track *will* be added.
-        addtrack = True
-        
+         # For every track, check it with every rule
         for rule in newrules:
-            # For every track, check it with every rule
-            if rule["negate"]:
-                if not re.search(rule["compiled"], track[rule["type"]]) == None:
-                    # If the regular expression matches the track, do not add it to the matchingtracks list.
-                    addtrack = False
-            else:
-                if re.search(rule["compiled"], track[rule["type"]]) == None:
-                    # If the regular expression does not match the track, do not add it to the matchingtracks list.
-                    addtrack = False
-        
-        if addtrack:
-            # Add the track if appropriate
+            if not rule.match(track): # Add the track if appropriate
+                continue
             matchingtracks.append(track)
 
     return matchingtracks
