@@ -4,7 +4,7 @@
 # it was going to be before I decided to finish it).
 
 import cPickle, datetime, operator, optparse
-import os, os.path, sys, re, textwrap, time
+import os, os.path, sqlite3, sys, re, textwrap, time
 
 DEFAULT_MDP_CONFIG_FILE = "/etc/mpd.conf"
 
@@ -238,6 +238,10 @@ def parseargs(args):
                       help="Location of the MPD database file",
                       metavar="FILE")
 
+    parser.add_option("-s", "--sticker-file", dest="stickerFile",
+                      help="Location of the MPD sticker file( holding ratings)",
+                      metavar="FILE")
+
     parser.add_option("-c", "--config-file", dest="configFile",
                       default='/etc/mpd.conf',
                       help="Location of the MPD config file",
@@ -255,7 +259,7 @@ def parseargs(args):
                       help="Create a new playlist",
                       metavar="NAME 'RULESET'")
 
-    parser.add_option("-s", "--simple-output", dest="simpleOutput",
+    parser.add_option("-o", "--output-only", dest="simpleOutput",
                       action="store_true", default=False,
                       help="Only print the final track list to STDOUT")
 
@@ -280,8 +284,8 @@ def parseargs(args):
             configDict[key] = getattr(options, key)
 
     return options.forceUpdate, options.cacheFile, options.dataDir, \
-           configDict['dbFile'], configDict['playlistDirectory'], \
-           options.playlists
+           configDict['dbFile'], configDict['stickerFile'], \
+           configDict['playlistDirectory'], options.playlists
 
 def _underscoreToCamelCase(s):
     tokens = s.split('_')
@@ -315,9 +319,10 @@ def parsempdconf(configFile, user = None):
 
 # A function to parse a MPD database and make a huge list of tracks
 def parsedatabase(dbFile):
-    tracks = []
+    tracks = {}
     parsing = False
 
+    track = None
     for line in open(dbFile, "r"):
         # For every line in the database, remove any whitespace at the
         # beginning and end so the script isn't buggered.
@@ -333,18 +338,35 @@ def parsedatabase(dbFile):
         
         if parsing:
             if line.startswith("key: "):
-                # add an empty Track object if we hit the beginning of a track
-                tracks.append(Track())
+                if track is not None: # save the previous one
+                    tracks[track.file] = track
+                track = Track() # create a new one
 
             key, value = line.split(": ", 1)
-            setattr(tracks[-1], key.lower(), value)
+            setattr(track, key.lower(), value)
+
+    return tracks
+
+def parseStickerDB(stickerFile, tracks):
+    conn = sqlite3.connect(stickerFile)
+
+    curs = conn.cursor()
+
+    curs.execute('SELECT * FROM sticker WHERE type=? and name=?',
+                 ("song", "rating"))
+
+    for row in curs:
+        filePath = row[1]
+        if filePath in tracks:
+            print filePath, row[3]
+            tracks[filePath].rating = row[3]
 
     return tracks
 
 def findMatchingTracks(tracks, newrules):
     matches = []
     
-    for track in tracks:
+    for track in tracks.values():
         toAdd = True
         for rule in newrules:
             if not rule.match(track): # Add the track if appropriate
@@ -406,7 +428,7 @@ def generatePlaylist(name, rules, track, dataDir, playlistDir):
         savegubbage({name:rules}, dataDir + "/" + name)
 
 # Parse some options!
-forceUpdate, cacheFile, dataDir, dbFile, playlistDirectory, playlists = parseargs(sys.argv[1:])
+forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDirectory, playlists = parseargs(sys.argv[1:])
 # FIXME: create non-existing directories
 
 # Check that the database is actually there before attempting to do stuff with it.
@@ -431,6 +453,8 @@ if not os.path.isfile(cacheFile) \
 
     # Now, parse that database!
     tracks = parsedatabase(dbFile)
+    if stickerFile:
+        tracks = parseStickerDB(stickerFile, tracks)
     
     # Save the parsed stuff to the cache file and close the database file
     # handler. That's not strictly required, python will clean up when the
@@ -445,8 +469,8 @@ else:
     # Open it for reading, load the stuff in the file into the tracks list,
     # close the file handler, and have a party.
     tracks = loadgubbage(cacheFile)
-    if tracks and type(tracks[-1]) == type({}):
-        raise Exception("Restoring from old cache won't work, use -f.")
+    if tracks and type(tracks) is not type({}):
+        raise Exception("Restoring from old cache won't work, please use -f.")
 
 if dataDir:
     # add pre-existing playlists to our list
