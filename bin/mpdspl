@@ -70,8 +70,7 @@ class AbstractRule:
 class RegexRule(AbstractRule):
     """ Search according to a regex, for instance:
                contains foo                     -->   =/foo/
-               contains bar, case-insensitive   -->   =/bar/i
-    """
+               contains bar, case-insensitive   -->   =/bar/i """
     
     OPERATORS = { '=' : re.search }
     FLAGS = { 'i' : re.IGNORECASE,
@@ -82,7 +81,7 @@ class RegexRule(AbstractRule):
                               delimiter, value, flags)
         self.reFlags = 0
         for reFlag in self.flags:
-            self.reFlags |= self.FLAGS[reFlags]
+            self.reFlags |= self.FLAGS[reFlag]
 
     def __match__(self, value):
         return self.getOperator()(self.value, value, self.reFlags)
@@ -91,8 +90,7 @@ class TimeDeltaRule(AbstractRule):
     """ Match according to a timedelta, for instance:
                in the last 3 days   -->   <%3days%
                before last month    -->   >%1month%
-               3 years ago          -->   =%3years%
-    """
+               3 years ago          -->   =%3years% """
     
     OPERATORS = { '=' : operator.eq,
                   '<' : operator.le,
@@ -123,8 +121,7 @@ class TimeStampRule(AbstractRule):
     """ Match according to a timestamp, for instance:
                before 2010-01-02   -->   <@2010-01-02@
                after  2009-12-20   -->   >@2009-12-20@
-               on     2009-11-18   -->   =@2009-11-18@          
-    """
+               on     2009-11-18   -->   =@2009-11-18@ """
     
     OPERATORS = { '=' : operator.eq,
                   '<' : operator.le,
@@ -170,24 +167,61 @@ class RuleFactory:
         for d, r in RuleFactory.DELIMITER_TO_RULE.iteritems():
             s += "          '%s' -> %s\n" % (d, r.__doc__)
         return s
-        
+
+class Playlist:
+    REGEX = re.compile(r'\s+')
+
+    def __init__(self, name, ruleString):
+        self.name = name
+        self.rules = [ RuleFactory.getRule(r)
+                       for r in self.REGEX.split(ruleString) ]
+        self.tracks = [] # tracks matching the rules; empty for now
+
+    def findMatchingTracks(self, tracks):
+        self.tracks = []
+    
+        for track in tracks.values():
+            toAdd = True
+            for rule in self.rules:
+                if not rule.match(track): # Add the track if appropriate
+                    toAdd = False
+                    break
+
+            if toAdd:
+                self.tracks.append(track)
+
+        self.setM3u()
+
+    def setM3u(self):
+        self.m3u = '\n'.join([ track.file for track in self.tracks ]) + '\n'
+
+    def getSaveFile(self, dataDir):
+        return os.path.join(dataDir, self.name)
+
+    def save(self, dataDir):
+        savegubbage(self, self.getSaveFile(dataDir))
+
+    def getM3uPath(self, playlistDir):
+        return os.path.join(playlistDir, self.name + ".m3u")
+
+    def writeM3u(self, playlistDir):
+        filePath = self.getM3uPath(playlistDir)
+        print "Saving playlist '%s' to '%s'" % (playlist.name, filePath)
+        open(filePath, 'w').write(self.m3u)
+
 class Track:
     def __init__(self):
         # create a track object with only empty attributes
         for key in KEYWORDS.values():
             setattr(self, key[0].lower(), "")
-        
-def parserules(rulestr):
-    """ Parse the rules regex """
-        
-    return [ RuleFactory.getRule(r) for r in re.split(r'\s+', rulestr) ]
 
+        
 class IndentedHelpFormatterWithNL(optparse.IndentedHelpFormatter):
+    """ So optparse doesn't mangle our help description. """
     def format_description(self, description):
         if not description: return ""
         desc_width = self.width - self.current_indent
         indent = " "*self.current_indent
-        # the above is still the same
         bits = description.split('\n')
         formatted_bits = [ textwrap.fill(bit,
                                          desc_width,
@@ -271,16 +305,16 @@ def parseargs(args):
 
     options, args = parser.parse_args(args)
 
-    # go from ((name,rule),(name1,rule1),...) to {name:rule,name1:rule1,...}
-    playlistDict = {}
-    for name, ruleSet in options.playlists:
-        playlistDict[name] = parserules(ruleSet)
-    options.playlists = playlistDict
-
     # we'll use dataDir=None to indicate we want simpleOutput
     if options.simpleOutput:
         options.dataDir = None
-        
+
+    # go from ((name,rule),(name1,rule1),...) to {name:rule,name1:rule1,...}
+    playlists = []
+    for name, ruleSet in options.playlists:
+        playlists.append(Playlist(name, ruleSet))
+    options.playlists = playlists
+
     configDict = parsempdconf(os.path.expanduser(options.configFile),
                               options.mpdUser)
 
@@ -364,77 +398,25 @@ def parseStickerDB(stickerFile, tracks):
     for row in curs:
         filePath = row[1]
         if filePath in tracks:
-            print filePath, row[3]
             tracks[filePath].rating = row[3]
 
     return tracks
-
-def findMatchingTracks(tracks, newrules):
-    matches = []
-    
-    for track in tracks.values():
-        toAdd = True
-        for rule in newrules:
-            if not rule.match(track): # Add the track if appropriate
-                toAdd = False
-                break
-
-        if toAdd:
-            matches.append(track)
-
-    return matches
-
-def writePlaylist(tracks, playlistDirectory):
-    # Parse a list of track dictionaries into a playlist. Thankfully, m3u is a
-    # *very* simple format.
-    playlist = ""
-    
-    for track in tracks:
-        playlist += os.path.join(playlistDirectory, track.file) + "\n"
-
-    return playlist
 
 # Save some random gubbage to a file
 def savegubbage(data, path):
     if not os.path.isdir(os.path.dirname(path)):
         os.mkdir(os.path.dirname(path))
 
-    # Open the file for writing in binary mode
-    outfile = open(path, "wb")
-    # Send the stuff to the file with the magic of cPickle
-    cPickle.dump(data, outfile)
-    # Close the file handler. Tidy u[p.
-    outfile.close()
+    cPickle.dump(data, open(path, "wb"))
 
     # We might be running as someone other than the user, so make the file writable
     os.chmod(path, 438)
 
 def loadgubbage(path):
-    infile = open(path, "rb")
-    data = cPickle.load(infile)
-    infile.close()
-
-    return data
-
-def generatePlaylist(name, rules, track, dataDir, playlistDir):
-    matchingtracks = findMatchingTracks(tracks, rules)
-    playlist = writePlaylist(matchingtracks, playlistDir)
-
-    if not dataDir:
-        for track in matchingtracks:
-            print track.file
-    else:
-        fileName = os.path.join(playlistDir, name + ".m3u")
-        print "Saving playlist '%s' to '%s'" % (name, fileName)
-        
-        # Write the contents of the playlist to the m3u file
-        open(fileName, 'w').write(playlist)
-        
-        # Save as dictionary, so we can easily reload it during a later run
-        savegubbage({name:rules}, dataDir + "/" + name)
+    return cPickle.load(open(path, "rb"))
 
 # Parse some options!
-forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDirectory, playlists = parseargs(sys.argv[1:])
+forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
 # FIXME: create non-existing directories
 
 # Check that the database is actually there before attempting to do stuff with it.
@@ -475,15 +457,31 @@ else:
     # Open it for reading, load the stuff in the file into the tracks list,
     # close the file handler, and have a party.
     tracks = loadgubbage(cacheFile)
-    if tracks and type(tracks) is not type({}):
+    try:
+        if tracks:
+            assert type(tracks) == type({})
+            if len(tracks.keys()) > 1:
+                assert isinstance(tracks.values()[-1], Track)
+    except:
         raise Exception("Restoring from old cache won't work, please use -f.")
 
 if dataDir:
     # add pre-existing playlists to our list
-    for playlistfile in os.listdir(dataDir):
-        playlists.update(loadgubbage(dataDir + "/" + playlistfile))
+    for playlistfile in [os.path.join(dataDir, f) for f in os.listdir(dataDir)]:
+        try:
+            playlist = loadgubbage(playlistfile)
+            assert isinstance(playlist, Playlist)
+        except:
+            raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+        playlists.append(playlist)
         
 # Now regenerate!
-print playlists
-for name, rules in playlists.iteritems():
-    generatePlaylist(name, rules, tracks, dataDir, playlistDirectory)
+for playlist in playlists:
+    playlist.findMatchingTracks(tracks)
+
+    if not dataDir: # stdout
+        for track in playlist.tracks:
+            print track.file
+    else: # write to .m3u & save
+        playlist.writeM3u(playlistDir)
+        playlist.save(dataDir)
