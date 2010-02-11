@@ -4,3 +4,5 @@ details.
 
 The contents of this entire git repository come without any warranty,
 to the extent permitted by applicable law.
+
+It was initially forked from http://github.com/Barrucadu/home.
