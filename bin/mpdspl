@@ -1,7 +1,13 @@
 #! /usr/bin/env python
-
-# A script to parse the MPD database into a list of dictionaries (or at least,
-# it was going to be before I decided to finish it).
+#
+# A script to create smart playlists, with a variety of criteria, out of an
+# MPD database.
+#
+# Authors:
+#   Sebastien Delafond <sdelafond@gmail.com>
+#   original implementation by Michael Walker <mike@barrucadu.co.uk>
+#
+# This code is licensed under the GPL v3, or any later version at your choice.
 
 import cPickle, datetime, operator, optparse
 import os, os.path, sqlite3, sys, re, textwrap, time
