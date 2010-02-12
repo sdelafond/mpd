@@ -188,6 +188,11 @@ class Playlist:
         self.tracks = [] # tracks matching the rules; empty for now
 
     @staticmethod
+    def initStaticAttributes(playlistDir, cacheDir):
+        Playlist.PLAYLIST_DIR = playlistDir
+        Playlist.CACHE_DIR = cacheDir
+
+    @staticmethod
     def load(name):
         obj = loadgubbage(Playlist.getSaveFile(name))
         try:
@@ -257,6 +262,10 @@ class MpdDB:
         self.tracks = {}
         self.__parseDB()
         self.__parseStickerDB()        
+
+    @staticmethod
+    def initStaticAttributes(cacheFile):
+        MpdDB.CACHE_FILE = cacheFile
 
     @staticmethod
     def load():
@@ -477,19 +486,15 @@ def loadgubbage(path):
 try:
    forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
 
-   MpdDB.CACHE_FILE = cacheFile
-
-   Playlist.PLAYLIST_DIR = playlistDir
-   Playlist.CACHE_DIR = dataDir
+   MpdDB.initStaticAttributes(cacheFile)
+   Playlist.initStaticAttributes(playlistDir, dataDir)
 
    playlistSet = PlaylistSet(playlists)
 
-   # Check that the database is actually there before attempting to do stuff with it.
-   if not os.path.isfile(dbFile):
+   if not os.path.isfile(dbFile): # no dbFile -> abort
        raise CustomException("The database file '%s' could not be found.\n" % (dbFile,))
 
-   # If no cache file, or one of MPD's DBs is more recent than it, re-parse the DB
-   if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile):
+   if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile): # update cache
        if dataDir:
            print "Updating database cache..."
 
@@ -511,8 +516,7 @@ try:
        playlist.findMatchingTracks(mpdDB)
 
        if not dataDir: # stdout
-           for track in playlist.tracks:
-               print track.file
+           print playlist.m3u
        else: # write to .m3u & save
            playlist.writeM3u()
            playlist.save()
