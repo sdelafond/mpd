@@ -274,7 +274,7 @@ def parseargs(args):
                       help="Location of the data directory (where we save playlist info)",
                       metavar="DIR")
 
-    parser.add_option("-d", "--database-file", dest="dbFile",
+    parser.add_option("-d", "--database-file", dest="dbFile", 
                       help="Location of the MPD database file",
                       metavar="FILE")
 
@@ -283,7 +283,7 @@ def parseargs(args):
                       metavar="FILE")
 
     parser.add_option("-c", "--config-file", dest="configFile",
-                      default='/etc/mpd.conf',
+                      default=DEFAULT_MDP_CONFIG_FILE,
                       help="Location of the MPD config file",
                       metavar="FILE")
 
@@ -430,6 +430,7 @@ if not os.path.isfile(dbFile):
 # accidental touches (or if you copy the cache to a new location).
 if not os.path.isfile(cacheFile) \
     or os.path.getmtime(dbFile) > os.path.getmtime(cacheFile) \
+    or (os.path.isfile(stickerFile) and os.path.getmtime(stickerFile) > os.path.getmtime(cacheFile)) \
     or forceUpdate:
     if dataDir:
         print "Updating database cache..."
