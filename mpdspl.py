@@ -417,6 +417,9 @@ def loadgubbage(path):
 
 # Parse some options!
 forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
+
+playlistsNames = [ p.name for p in playlists ]
+
 # FIXME: create non-existing directories
 
 # Check that the database is actually there before attempting to do stuff with it.
@@ -474,6 +477,8 @@ if dataDir:
             assert isinstance(playlist, Playlist)
         except:
             raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+        if playlist.name in playlistsNames:
+            raise Exception("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (playlist.name, playlistfile))
         playlists.append(playlist)
         
 # Now regenerate!
