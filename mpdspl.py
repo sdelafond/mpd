@@ -169,7 +169,7 @@ class RuleFactory:
         return s
 
 class Playlist:
-    REGEX = re.compile(r'\s+')    
+    REGEX = re.compile(r'\s*,\s*')    
 
     def __init__(self, name, ruleString):
         self.name = name
@@ -254,15 +254,12 @@ class MpdDB:
 
         track = None
         for line in open(self.dbFile, "r"):
-            # For every line in the database, remove any whitespace at the
-            # beginning and end so the script isn't buggered.
             line = line.strip()
 
-            # If entering a songList, start parsing
-            if line == "songList begin":
+            if line == "songList begin": # enter parsing mode
                 parsing = True
                 continue
-            if line == "songList end":
+            if line == "songList end": # exit parsing mode
                 parsing = False
                 continue
 
@@ -309,7 +306,7 @@ class IndentedHelpFormatterWithNL(optparse.IndentedHelpFormatter):
 def parseargs(args):
     parser = optparse.OptionParser(formatter=IndentedHelpFormatterWithNL(),
                                    description="""Playlist ruleset:
-        Each ruleset is made of several rules, separated by spaces.
+        Each ruleset is made of several rules, separated by commas.
         Each rule is made of a keyword, an operator, a value to match
         surrounded by delimiters, and several optional flags influencing the
         match.
