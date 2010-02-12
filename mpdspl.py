@@ -169,7 +169,7 @@ class RuleFactory:
         return s
 
 class Playlist:
-    REGEX = re.compile(r'\s+')
+    REGEX = re.compile(r'\s+')    
 
     def __init__(self, name, ruleString):
         self.name = name
@@ -177,10 +177,10 @@ class Playlist:
                        for r in self.REGEX.split(ruleString) ]
         self.tracks = [] # tracks matching the rules; empty for now
 
-    def findMatchingTracks(self, tracks):
+    def findMatchingTracks(self, mpdDB):
         self.tracks = []
     
-        for track in tracks.values():
+        for track in mpdDB.getTracks():
             toAdd = True
             for rule in self.rules:
                 if not rule.match(track): # Add the track if appropriate
@@ -197,6 +197,16 @@ class Playlist:
 
     def getSaveFile(self, dataDir):
         return os.path.join(dataDir, self.name)
+
+    @staticmethod
+    def load(dataFile):
+        obj = loadgubbage(dataFile)
+        try:
+            assert isinstance(obj, Playlist)
+        except:
+            raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+
+        return obj
 
     def save(self, dataDir):
         savegubbage(self, self.getSaveFile(dataDir))
@@ -215,7 +225,72 @@ class Track:
         for key in KEYWORDS.values():
             setattr(self, key[0].lower(), "")
 
+class MpdDB:
+    def __init__(self, dbFile, stickerFile = None):
+        self.dbFile = dbFile
+        self.stickerFile = stickerFile
+        self.tracks = {}
+        self.__parseDB()
+        self.__parseStickerDB()        
+
+    @staticmethod
+    def load(cacheFile):
+        obj = loadgubbage(cacheFile)
+        try:
+            assert isinstance(obj, MpdDB)
+            tracks = obj.getTracks()
+            if len(tracks) > 1:
+                assert isinstance(tracks[-1], Track)
+        except:
+            raise Exception("Restoring from old cache won't work, please use -f.")
+
+        return obj
+
+    def save(self, cacheFile):
+        savegubbage(self, cacheFile)
         
+    def __parseDB(self):
+        parsing = False
+
+        track = None
+        for line in open(self.dbFile, "r"):
+            # For every line in the database, remove any whitespace at the
+            # beginning and end so the script isn't buggered.
+            line = line.strip()
+
+            # If entering a songList, start parsing
+            if line == "songList begin":
+                parsing = True
+                continue
+            if line == "songList end":
+                parsing = False
+                continue
+
+            if parsing:
+                if line.startswith("key: "):
+                    if track is not None: # save the previous one
+                        self.tracks[track.file] = track
+                    track = Track() # create a new one
+
+                key, value = line.split(": ", 1)
+                setattr(track, key.lower(), value)
+
+    def __parseStickerDB(self):
+        conn = sqlite3.connect(self.stickerFile)
+
+        curs = conn.cursor()
+
+        curs.execute('SELECT * FROM sticker WHERE type=? and name=?',
+                     ("song", "rating"))
+
+        for row in curs:
+            filePath = row[1]
+            if filePath in self.tracks:
+                self.tracks[filePath].rating = row[3]
+
+    def getTracks(self):
+        return self.tracks.values()
+
 class IndentedHelpFormatterWithNL(optparse.IndentedHelpFormatter):
     """ So optparse doesn't mangle our help description. """
     def format_description(self, description):
@@ -357,51 +432,6 @@ def parsempdconf(configFile, user = None):
 
     return configDict
 
-# A function to parse a MPD database and make a huge list of tracks
-def parsedatabase(dbFile):
-    tracks = {}
-    parsing = False
-
-    track = None
-    for line in open(dbFile, "r"):
-        # For every line in the database, remove any whitespace at the
-        # beginning and end so the script isn't buggered.
-        line = line.strip()
-
-        # If entering a songList, start parsing
-        if line == "songList begin":
-            parsing = True
-            continue
-        if line == "songList end":
-            parsing = False
-            continue
-        
-        if parsing:
-            if line.startswith("key: "):
-                if track is not None: # save the previous one
-                    tracks[track.file] = track
-                track = Track() # create a new one
-
-            key, value = line.split(": ", 1)
-            setattr(track, key.lower(), value)
-
-    return tracks
-
-def parseStickerDB(stickerFile, tracks):
-    conn = sqlite3.connect(stickerFile)
-
-    curs = conn.cursor()
-
-    curs.execute('SELECT * FROM sticker WHERE type=? and name=?',
-                 ("song", "rating"))
-
-    for row in curs:
-        filePath = row[1]
-        if filePath in tracks:
-            tracks[filePath].rating = row[3]
-
-    return tracks
-
 # Save some random gubbage to a file
 def savegubbage(data, path):
     if not os.path.isdir(os.path.dirname(path)):
@@ -417,8 +447,6 @@ def loadgubbage(path):
 
 # Parse some options!
 forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
-
-playlistsNames = [ p.name for p in playlists ]
 
 # FIXME: create non-existing directories
 
@@ -443,47 +471,23 @@ if not os.path.isfile(cacheFile) \
     if not os.path.isdir(os.path.dirname(cacheFile)):
         os.mkdir(os.path.dirname(cacheFile))
 
-    # Now, parse that database!
-    tracks = parsedatabase(dbFile)
-    if stickerFile:
-        tracks = parseStickerDB(stickerFile, tracks)
-    
-    # Save the parsed stuff to the cache file and close the database file
-    # handler. That's not strictly required, python will clean up when the
-    # script ends, but you can't unmount volumes with file handlers pointing
-    # to them, so it makes a mess.
-    savegubbage(tracks, cacheFile)
-else:
-    # Oh, goodie, we don't need to go through all that arduous parsing as we
-    # have a valid cache file :D
+    mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
+    mpdDB.save(cacheFile) # save to file
+else: # we have a valid cache file, use it
     if dataDir:
         print "Loading database cache..."
-    # Open it for reading, load the stuff in the file into the tracks list,
-    # close the file handler, and have a party.
-    tracks = loadgubbage(cacheFile)
-    try:
-        if tracks:
-            assert type(tracks) == type({})
-            if len(tracks.keys()) > 1:
-                assert isinstance(tracks.values()[-1], Track)
-    except:
-        raise Exception("Restoring from old cache won't work, please use -f.")
+    mpdDB = MpdDB.load(cacheFile)
 
-if dataDir:
-    # add pre-existing playlists to our list
+if dataDir: # add pre-existing playlists to our list
+    playlistsNames = [ p.name for p in playlists ]
     for playlistfile in [os.path.join(dataDir, f) for f in os.listdir(dataDir)]:
-        try:
-            playlist = loadgubbage(playlistfile)
-            assert isinstance(playlist, Playlist)
-        except:
-            raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+        playlist = Playlist.load(playlistfile)
         if playlist.name in playlistsNames:
             raise Exception("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (playlist.name, playlistfile))
         playlists.append(playlist)
         
-# Now regenerate!
-for playlist in playlists:
-    playlist.findMatchingTracks(tracks)
+for playlist in playlists: # now generate all the playlists
+    playlist.findMatchingTracks(mpdDB)
 
     if not dataDir: # stdout
         for track in playlist.tracks:
