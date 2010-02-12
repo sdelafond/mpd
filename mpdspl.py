@@ -60,7 +60,10 @@ class AbstractRule:
         return self.OPERATORS[self.operator]
     
     def match(self, track):
-        value = getattr(track, KEYWORDS[self.key][0].lower())
+        try:
+            value = getattr(track, KEYWORDS[self.key][0].lower())
+        except:
+            value = getattr(track, self.key.lower())
         matched = self.__match__(value)
 
         if self.negate:
