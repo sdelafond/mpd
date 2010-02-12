@@ -41,9 +41,18 @@ KEYWORDS = {"ar" : ("Artist", "Artist"),
             "mt" : ("mtime", "File modification time"),
             "ra" : ("Rating", "Track rating") }
 
+class CustomException(Exception):
+    pass
+
 class AbstractRule:
     def __init__(self, key, operator, delimiter, value, flags):
-        self.key = key
+        if key.lower() in KEYWORDS:
+            self.key = KEYWORDS[key.lower()][0]
+        elif key.lower() in [ v[0].lower() for v in KEYWORDS.values() ]:
+            self.key = key.lower()
+        else:
+            raise CustomException("A track has no attribute '%s'" % (key,))
+        
         self.operator = operator
         self.delimiter = delimiter
         self.value = value
@@ -60,11 +69,7 @@ class AbstractRule:
         return self.OPERATORS[self.operator]
     
     def match(self, track):
-        try:
-            value = getattr(track, KEYWORDS[self.key][0].lower())
-        except:
-            value = getattr(track, self.key.lower())
-        matched = self.__match__(value)
+        matched = self.__match__(getattr(track, self.key.lower()))
 
         if self.negate:
             matched = not matched
@@ -107,7 +112,7 @@ class TimeDeltaRule(AbstractRule):
         
         m = re.match(self.TIME_DELTA_REGEX, self.value)
         if not m:
-            raise Exception("Could not parse duration")
+            raise CustomException("Could not parse duration")
         d = m.groupdict()
         self.number = int(d['number'])
         self.unit = d['unit'].lower()
@@ -158,7 +163,7 @@ class RuleFactory:
                      r'])(?P<value>.+)\3(?P<flags>\w+)?',
                      ruleString)
         if not m:
-            raise Exception("Could not parse rule '%s'" % (ruleString,))
+            raise CustomException("Could not parse rule '%s'" % (ruleString,))
 
         d = m .groupdict()
         ruleClass = RuleFactory.DELIMITER_TO_RULE[d['delimiter']]
@@ -188,7 +193,7 @@ class Playlist:
         try:
             assert isinstance(obj, Playlist)
         except:
-            raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+            raise CustomException("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
 
         return obj
 
@@ -231,7 +236,7 @@ class PlaylistSet:
 
     def addMarshalled(self, name):
         if name in playlists.keys():
-            raise Exception("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (name, Playlist.getSaveFile(name)))
+            raise CustomException("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (name, Playlist.getSaveFile(name)))
         playlists[name] = Playlist.load(name)
 
     def getPlaylists(self):
@@ -262,7 +267,7 @@ class MpdDB:
             if len(tracks) > 1:
                 assert isinstance(tracks[-1], Track)
         except:
-            raise Exception("Restoring from old cache won't work, please use -f.")
+            raise CustomException("Restoring from old cache won't work, please use -f.")
 
         return obj
 
@@ -345,7 +350,7 @@ def parseargs(args):
         """        These available keywords are:
 """ + \
 
-        '\n'.join([ "            " + k + " : " + v[1] for k, v in KEYWORDS.iteritems() ]) + \
+        '\n'.join([ "            " + k + "/" + v[0] + " : " + v[1].lower() for k, v in KEYWORDS.iteritems() ]) + \
 
         """
 
@@ -469,45 +474,48 @@ def savegubbage(data, path):
 def loadgubbage(path):
     return cPickle.load(open(path, "rb"))
 
-# Parse some options!
-forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
+try:
+   forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
 
-MpdDB.CACHE_FILE = cacheFile
+   MpdDB.CACHE_FILE = cacheFile
 
-Playlist.PLAYLIST_DIR = playlistDir
-Playlist.CACHE_DIR = dataDir
+   Playlist.PLAYLIST_DIR = playlistDir
+   Playlist.CACHE_DIR = dataDir
 
-playlistSet = PlaylistSet(playlists)
+   playlistSet = PlaylistSet(playlists)
 
-# Check that the database is actually there before attempting to do stuff with it.
-if not os.path.isfile(dbFile):
-    raise Exception("The database file '%s' could not be found.\n" % (dbFile,))
+   # Check that the database is actually there before attempting to do stuff with it.
+   if not os.path.isfile(dbFile):
+       raise CustomException("The database file '%s' could not be found.\n" % (dbFile,))
 
-# If no cache file, or one of MPD's DBs is more recent than it, re-parse the DB
-if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile):
-    if dataDir:
-        print "Updating database cache..."
+   # If no cache file, or one of MPD's DBs is more recent than it, re-parse the DB
+   if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile):
+       if dataDir:
+           print "Updating database cache..."
 
-    if not os.path.isdir(os.path.dirname(cacheFile)):
-        os.mkdir(os.path.dirname(cacheFile))
+       if not os.path.isdir(os.path.dirname(cacheFile)):
+           os.mkdir(os.path.dirname(cacheFile))
 
-    mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
-    mpdDB.save() # save to file
-else: # we have a valid cache file, use it
-    if dataDir:
-        print "Loading database cache..."
-    mpdDB = MpdDB.load()
+       mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
+       mpdDB.save() # save to file
+   else: # we have a valid cache file, use it
+       if dataDir:
+           print "Loading database cache..."
+       mpdDB = MpdDB.load()
 
-if dataDir: # add pre-existing playlists to our list
-    for name in os.listdir(Playlist.CACHE_DIR):
-        playlistSet.addMarshalled(name)
-        
-for playlist in playlistSet.getPlaylists(): # now generate all the playlists
-    playlist.findMatchingTracks(mpdDB)
+   if dataDir: # add pre-existing playlists to our list
+       for name in os.listdir(Playlist.CACHE_DIR):
+           playlistSet.addMarshalled(name)
 
-    if not dataDir: # stdout
-        for track in playlist.tracks:
-            print track.file
-    else: # write to .m3u & save
-        playlist.writeM3u()
-        playlist.save()
+   for playlist in playlistSet.getPlaylists(): # now generate all the playlists
+       playlist.findMatchingTracks(mpdDB)
+
+       if not dataDir: # stdout
+           for track in playlist.tracks:
+               print track.file
+       else: # write to .m3u & save
+           playlist.writeM3u()
+           playlist.save()
+except CustomException, e:
+    print e.message
+    sys.exit(2)
