@@ -265,6 +265,13 @@ class MpdDB:
 
     def save(self):
         savegubbage(self, MpdDB.CACHE_FILE)
+
+    @staticmethod
+    def needUpdate(dbFile, stickerFile):
+        return (not os.path.isfile(MpdDB.CACHE_FILE) \
+                or os.path.getmtime(dbFile) > os.path.getmtime(MpdDB.CACHE_FILE) \
+                or (os.path.isfile(stickerFile) \
+                    and os.path.getmtime(stickerFile) > os.path.getmtime(MpdDB.CACHE_FILE)))
         
     def __parseDB(self):
         parsing = False
@@ -474,10 +481,7 @@ if not os.path.isfile(dbFile):
     raise Exception("The database file '%s' could not be found.\n" % (dbFile,))
 
 # If no cache file, or one of MPD's DBs is more recent than it, re-parse the DB
-if not os.path.isfile(cacheFile) \
-    or os.path.getmtime(dbFile) > os.path.getmtime(cacheFile) \
-    or (os.path.isfile(stickerFile) and os.path.getmtime(stickerFile) > os.path.getmtime(cacheFile)) \
-    or forceUpdate:
+if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile):
     if dataDir:
         print "Updating database cache..."
 
