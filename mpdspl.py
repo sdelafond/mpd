@@ -169,13 +169,32 @@ class RuleFactory:
         return s
 
 class Playlist:
-    REGEX = re.compile(r'\s*,\s*')    
-
+    REGEX = re.compile(r'\s*,\s*') # how we split rules in a ruleset
+    PLAYLIST_DIR = None # where to save m3u files
+    CACHE_DIR = None # where to save marshalled playlists
+    
     def __init__(self, name, ruleString):
         self.name = name
         self.rules = [ RuleFactory.getRule(r)
                        for r in self.REGEX.split(ruleString) ]
         self.tracks = [] # tracks matching the rules; empty for now
+
+    @staticmethod
+    def load(name):
+        obj = loadgubbage(Playlist.getSaveFile(name))
+        try:
+            assert isinstance(obj, Playlist)
+        except:
+            raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+
+        return obj
+
+    def save(self):
+        savegubbage(self, Playlist.getSaveFile(self.name))
+
+    @staticmethod
+    def getSaveFile(name):
+        return os.path.join(Playlist.CACHE_DIR, name)
 
     def findMatchingTracks(self, mpdDB):
         self.tracks = []
@@ -195,29 +214,25 @@ class Playlist:
     def setM3u(self):
         self.m3u = '\n'.join([ track.file for track in self.tracks ]) + '\n'
 
-    def getSaveFile(self, dataDir):
-        return os.path.join(dataDir, self.name)
+    def getM3uPath(self):
+        return os.path.join(self.PLAYLIST_DIR, self.name + ".m3u")
 
-    @staticmethod
-    def load(dataFile):
-        obj = loadgubbage(dataFile)
-        try:
-            assert isinstance(obj, Playlist)
-        except:
-            raise Exception("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
-
-        return obj
-
-    def save(self, dataDir):
-        savegubbage(self, self.getSaveFile(dataDir))
-
-    def getM3uPath(self, playlistDir):
-        return os.path.join(playlistDir, self.name + ".m3u")
-
-    def writeM3u(self, playlistDir):
-        filePath = self.getM3uPath(playlistDir)
+    def writeM3u(self):
+        filePath = self.getM3uPath()
         print "Saving playlist '%s' to '%s'" % (playlist.name, filePath)
         open(filePath, 'w').write(self.m3u)
+
+class PlaylistSet:
+    def __init__(self, playlists):
+        self.playlists = playlists
+
+    def addMarshalled(self, name):
+        if name in playlists.keys():
+            raise Exception("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (name, Playlist.getSaveFile(name)))
+        playlists[name] = Playlist.load(name)
+
+    def getPlaylists(self):
+        return self.playlists.values()
 
 class Track:
     def __init__(self):
@@ -226,6 +241,8 @@ class Track:
             setattr(self, key[0].lower(), "")
 
 class MpdDB:
+    CACHE_FILE = None # where to save marshalled DB
+    
     def __init__(self, dbFile, stickerFile = None):
         self.dbFile = dbFile
         self.stickerFile = stickerFile
@@ -234,8 +251,8 @@ class MpdDB:
         self.__parseStickerDB()        
 
     @staticmethod
-    def load(cacheFile):
-        obj = loadgubbage(cacheFile)
+    def load():
+        obj = loadgubbage(MpdDB.CACHE_FILE)
         try:
             assert isinstance(obj, MpdDB)
             tracks = obj.getTracks()
@@ -246,8 +263,8 @@ class MpdDB:
 
         return obj
 
-    def save(self, cacheFile):
-        savegubbage(self, cacheFile)
+    def save(self):
+        savegubbage(self, MpdDB.CACHE_FILE)
         
     def __parseDB(self):
         parsing = False
@@ -382,9 +399,9 @@ def parseargs(args):
         options.dataDir = None
 
     # go from ((name,rule),(name1,rule1),...) to {name:rule,name1:rule1,...}
-    playlists = []
+    playlists = {}
     for name, ruleSet in options.playlists:
-        playlists.append(Playlist(name, ruleSet))
+        playlists[name] = Playlist(name, ruleSet)
     options.playlists = playlists
 
     configDict = parsempdconf(os.path.expanduser(options.configFile),
@@ -445,17 +462,18 @@ def loadgubbage(path):
 # Parse some options!
 forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
 
-# FIXME: create non-existing directories
+MpdDB.CACHE_FILE = cacheFile
+
+Playlist.PLAYLIST_DIR = playlistDir
+Playlist.CACHE_DIR = dataDir
+
+playlistSet = PlaylistSet(playlists)
 
 # Check that the database is actually there before attempting to do stuff with it.
 if not os.path.isfile(dbFile):
-    sys.stderr.write("The database file '%s' could not be found.\n" % (dbFile,))
-    sys.exit(1)
+    raise Exception("The database file '%s' could not be found.\n" % (dbFile,))
 
-# If the cache file does not exist OR the database has been modified since the
-# cache file has this has the side-effect of being able to touch the cache
-# file to stop it from being updated. Good thing we have the -f option for any
-# accidental touches (or if you copy the cache to a new location).
+# If no cache file, or one of MPD's DBs is more recent than it, re-parse the DB
 if not os.path.isfile(cacheFile) \
     or os.path.getmtime(dbFile) > os.path.getmtime(cacheFile) \
     or (os.path.isfile(stickerFile) and os.path.getmtime(stickerFile) > os.path.getmtime(cacheFile)) \
@@ -463,32 +481,26 @@ if not os.path.isfile(cacheFile) \
     if dataDir:
         print "Updating database cache..."
 
-    # If the cache directory does not exist, create it. The dirname function
-    # just removes the "/mpddb.cache" from the end.
     if not os.path.isdir(os.path.dirname(cacheFile)):
         os.mkdir(os.path.dirname(cacheFile))
 
     mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
-    mpdDB.save(cacheFile) # save to file
+    mpdDB.save() # save to file
 else: # we have a valid cache file, use it
     if dataDir:
         print "Loading database cache..."
-    mpdDB = MpdDB.load(cacheFile)
+    mpdDB = MpdDB.load()
 
 if dataDir: # add pre-existing playlists to our list
-    playlistsNames = [ p.name for p in playlists ]
-    for playlistfile in [os.path.join(dataDir, f) for f in os.listdir(dataDir)]:
-        playlist = Playlist.load(playlistfile)
-        if playlist.name in playlistsNames:
-            raise Exception("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (playlist.name, playlistfile))
-        playlists.append(playlist)
+    for name in os.listdir(Playlist.CACHE_DIR):
+        playlistSet.addMarshalled(name)
         
-for playlist in playlists: # now generate all the playlists
+for playlist in playlistSet.getPlaylists(): # now generate all the playlists
     playlist.findMatchingTracks(mpdDB)
 
     if not dataDir: # stdout
         for track in playlist.tracks:
             print track.file
     else: # write to .m3u & save
-        playlist.writeM3u(playlistDir)
-        playlist.save(dataDir)
+        playlist.writeM3u()
+        playlist.save()
