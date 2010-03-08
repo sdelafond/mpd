@@ -241,7 +241,7 @@ class PlaylistSet:
 
     def addMarshalled(self, name):
         if name in playlists.keys():
-            raise CustomException("Cowardly refusing to create a new '%s' playlist when '%s' already exists." % (name, Playlist.getSaveFile(name)))
+            raise CustomException("Cowardly refusing to create a new '%s' playlist since '%s' already exists." % (name, Playlist.getSaveFile(name)))
         playlists[name] = Playlist.load(name)
 
     def getPlaylists(self):
@@ -470,56 +470,55 @@ def parsempdconf(configFile, user = None):
 
     return configDict
 
-# Save some random gubbage to a file
 def savegubbage(data, path):
     if not os.path.isdir(os.path.dirname(path)):
         os.mkdir(os.path.dirname(path))
-
     cPickle.dump(data, open(path, "wb"))
-
-    # We might be running as someone other than the user, so make the file writable
-    os.chmod(path, 438)
 
 def loadgubbage(path):
     return cPickle.load(open(path, "rb"))
 
-try:
-   forceUpdate, cacheFile, dataDir, dbFile, stickerFile, playlistDir, playlists = parseargs(sys.argv[1:])
+if __name__ == '__main__':
+   try:
+      forceUpdate, cacheFile, dataDir, \
+                   dbFile, stickerFile, \
+                   playlistDir, playlists = parseargs(sys.argv[1:])
 
-   MpdDB.initStaticAttributes(cacheFile)
-   Playlist.initStaticAttributes(playlistDir, dataDir)
+      MpdDB.initStaticAttributes(cacheFile)
+      Playlist.initStaticAttributes(playlistDir, dataDir)
 
-   playlistSet = PlaylistSet(playlists)
+      playlistSet = PlaylistSet(playlists)
 
-   if not os.path.isfile(dbFile): # no dbFile -> abort
-       raise CustomException("The database file '%s' could not be found.\n" % (dbFile,))
+      if not os.path.isfile(dbFile): # no dbFile -> abort
+          raise CustomException("The database file '%s' could not be found" %
+                                (dbFile,))
 
-   if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile): # update cache
-       if dataDir:
-           print "Updating database cache..."
+      if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile): # update cache
+          if dataDir:
+              print "Updating database cache..."
 
-       if not os.path.isdir(os.path.dirname(cacheFile)):
-           os.mkdir(os.path.dirname(cacheFile))
+          if not os.path.isdir(os.path.dirname(cacheFile)):
+              os.mkdir(os.path.dirname(cacheFile))
 
-       mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
-       mpdDB.save() # save to file
-   else: # we have a valid cache file, use it
-       if dataDir:
-           print "Loading database cache..."
-       mpdDB = MpdDB.load()
+          mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
+          mpdDB.save() # save to file
+      else: # we have a valid cache file, use it
+          if dataDir:
+              print "Loading database cache..."
+          mpdDB = MpdDB.load()
 
-   if dataDir: # add pre-existing playlists to our list
-       for name in os.listdir(Playlist.CACHE_DIR):
-           playlistSet.addMarshalled(name)
+      if dataDir: # add pre-existing playlists to our list
+          for name in os.listdir(Playlist.CACHE_DIR):
+              playlistSet.addMarshalled(name)
 
-   for playlist in playlistSet.getPlaylists(): # now generate all the playlists
-       playlist.findMatchingTracks(mpdDB)
+      for playlist in playlistSet.getPlaylists():
+          playlist.findMatchingTracks(mpdDB)
 
-       if not dataDir: # stdout
-           print playlist.m3u
-       else: # write to .m3u & save
-           playlist.writeM3u()
-           playlist.save()
-except CustomException, e:
-    print e.message
-    sys.exit(2)
+          if not dataDir: # stdout
+              print playlist.m3u
+          else: # write to .m3u & save
+              playlist.writeM3u()
+              playlist.save()
+   except CustomException, e:
+       print e.message
+       sys.exit(2)
