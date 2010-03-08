@@ -256,12 +256,17 @@ class Track:
 class MpdDB:
     CACHE_FILE = None # where to save marshalled DB
     
-    def __init__(self, dbFile, stickerFile = None):
+    def __init__(self, dbFile,
+                 stickerFile = None, mpdcronStatsFile = None):
         self.dbFile = dbFile
         self.stickerFile = stickerFile
+        self.mpdcronStatsFile = mpdcronStatsFile
         self.tracks = {}
         self.__parseDB()
-        self.__parseStickerDB()        
+        if mpdcronStatsFile:
+            self.__parseMpdcronDB()            
+        elif self.stickerFile:
+            self.__parseStickerDB()
 
     @staticmethod
     def initStaticAttributes(cacheFile):
@@ -284,11 +289,12 @@ class MpdDB:
         savegubbage(self, MpdDB.CACHE_FILE)
 
     @staticmethod
-    def needUpdate(dbFile, stickerFile):
+    def needUpdate(dbFile, extraFile):
         return (not os.path.isfile(MpdDB.CACHE_FILE) \
                 or os.path.getmtime(dbFile) > os.path.getmtime(MpdDB.CACHE_FILE) \
-                or (os.path.isfile(stickerFile) \
-                    and os.path.getmtime(stickerFile) > os.path.getmtime(MpdDB.CACHE_FILE)))
+                or (extraFile \
+                    and os.path.isfile(extraFile) \
+                    and os.path.getmtime(extraFile) > os.path.getmtime(MpdDB.CACHE_FILE)))
         
     def __parseDB(self):
         parsing = False
@@ -325,6 +331,18 @@ class MpdDB:
             filePath = row[1]
             if filePath in self.tracks:
                 self.tracks[filePath].rating = row[3]
+
+    def __parseMpdcronDB(self):
+        conn = sqlite3.connect(self.mpdcronStatsFile)
+
+        curs = conn.cursor()
+
+        curs.execute('SELECT uri, rating FROM song WHERE rating > 0', ())
+
+        for row in curs:
+            filePath = row[0]
+            if filePath in self.tracks:
+                self.tracks[filePath].rating = str(row[1])
 
     def getTracks(self):
         return self.tracks.values()
@@ -392,7 +410,12 @@ def parseargs(args):
                       metavar="FILE")
 
     parser.add_option("-s", "--sticker-file", dest="stickerFile",
-                      help="Location of the MPD sticker file( holding ratings)",
+                      help="Location of the MPD sticker file (holding ratings)",
+                      metavar="FILE")
+
+    parser.add_option("-m", "--mpdcron-stats-file", dest="mpdcronStatsFile",
+                      help="Location of the mpdcron stats file (holding ratings and other info)",
+                      default=None,
                       metavar="FILE")
 
     parser.add_option("-c", "--config-file", dest="configFile",
@@ -418,6 +441,10 @@ def parseargs(args):
 
     options, args = parser.parse_args(args)
 
+    if getattr(options, "mpdcronStatsFile") and getattr(options, "stickerFile"):
+        print "Can't use -s and -m at the same time, as they both provide ratings."
+        sys.exit(2)
+
     # we'll use dataDir=None to indicate we want simpleOutput
     if options.simpleOutput:
         options.dataDir = None
@@ -438,6 +465,7 @@ def parseargs(args):
 
     return options.forceUpdate, options.cacheFile, options.dataDir, \
            configDict['dbFile'], configDict['stickerFile'], \
+           options.mpdcronStatsFile, \
            configDict['playlistDirectory'], options.playlists
 
 def _underscoreToCamelCase(s):
@@ -482,6 +510,7 @@ if __name__ == '__main__':
    try:
       forceUpdate, cacheFile, dataDir, \
                    dbFile, stickerFile, \
+                   mpdcronStatsFile, \
                    playlistDir, playlists = parseargs(sys.argv[1:])
 
       MpdDB.initStaticAttributes(cacheFile)
@@ -493,14 +522,20 @@ if __name__ == '__main__':
           raise CustomException("The database file '%s' could not be found" %
                                 (dbFile,))
 
-      if forceUpdate or MpdDB.needUpdate(dbFile, stickerFile): # update cache
+      if forceUpdate or MpdDB.needUpdate(dbFile,
+                                         mpdcronStatsFile or stickerFile): # update cache
           if dataDir:
               print "Updating database cache..."
 
           if not os.path.isdir(os.path.dirname(cacheFile)):
               os.mkdir(os.path.dirname(cacheFile))
 
-          mpdDB = MpdDB(dbFile, stickerFile) # MPD DB object
+          # create the MPD DB object
+          if mpdcronStatsFile:
+              mpdDB = MpdDB(dbFile, mpdcronStatsFile=mpdcronStatsFile)
+          else:
+              mpdDB = MpdDB(dbFile, stickerFile=stickerFile)
+              
           mpdDB.save() # save to file
       else: # we have a valid cache file, use it
           if dataDir:
