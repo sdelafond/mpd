@@ -9,7 +9,7 @@
 #
 # This code is licensed under the GPL v3, or any later version at your choice.
 
-import cPickle, datetime, operator, optparse
+import codecs, cPickle, datetime, operator, optparse
 import os, os.path, sqlite3, sys, re, textwrap, time
 
 DEFAULT_MDP_CONFIG_FILE = "/etc/mpd.conf"
@@ -225,7 +225,7 @@ class Playlist:
         self.setM3u()
 
     def setM3u(self):
-        self.m3u = '\n'.join([ track.file for track in self.tracks ]) + '\n'
+        self.m3u = '\n'.join([ track.file for track in self.tracks ])
 
     def getM3uPath(self):
         return os.path.join(self.PLAYLIST_DIR, self.name + ".m3u")
@@ -233,7 +233,7 @@ class Playlist:
     def writeM3u(self):
         filePath = self.getM3uPath()
         print "Saving playlist '%s' to '%s'" % (playlist.name, filePath)
-        open(filePath, 'w').write(self.m3u)
+        codecs.open(filePath, 'w', 'utf-8').write(self.m3u + '\n')
 
 class PlaylistSet:
     def __init__(self, playlists):
@@ -294,7 +294,7 @@ class MpdDB:
         parsing = False
 
         track = None
-        for line in open(self.dbFile, "r"):
+        for line in codecs.open(self.dbFile, 'r', 'utf-8'):
             line = line.strip()
 
             if line == "songList begin": # enter parsing mode
@@ -515,7 +515,7 @@ if __name__ == '__main__':
           playlist.findMatchingTracks(mpdDB)
 
           if not dataDir: # stdout
-              print playlist.m3u
+              print playlist.m3u.encode('utf-8')
           else: # write to .m3u & save
               playlist.writeM3u()
               playlist.save()
