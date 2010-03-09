@@ -29,17 +29,20 @@ DEFAULT_DATA_DIR = os.environ.get('XDG_DATA_HOME',
 DEFAULT_DATA_DIR = os.path.expanduser(os.path.join(DEFAULT_DATA_DIR,
                                                    "mpdspl"))
 
-KEYWORDS = {"ar" : ("Artist", "Artist"),
-            "al" : ("Album", "Album"),
-            "ti" : ("Title", "Title"),
-            "tn" : ("Track", "Track number"),
-            "ge" : ("Genre", "Genre"),
-            "ye" : ("Date", "Track year"),
-            "le" : ("Time", "Track duration (in seconds)"),
-            "fp" : ("file", "File full path"),
-            "fn" : ("key", "File name"),
-            "mt" : ("mtime", "File modification time"),
-            "ra" : ("Rating", "Track rating") }
+KEYWORDS = {"ar"   : ("Artist", "Artist"),
+            "al"   : ("Album", "Album"),
+            "ti"   : ("Title", "Title"),
+            "tn"   : ("Track", "Track number"),
+            "ge"   : ("Genre", "Genre"),
+            "ye"   : ("Date", "Track year"),
+            "le"   : ("Time", "Track duration (in seconds)"),
+            "fp"   : ("file", "File full path"),
+            "fn"   : ("key", "File name"),
+            "mt"   : ("mtime", "File modification time"),
+            "ra"   : ("Rating", "Track rating"),
+            "raar" : ("RatingAr", "Artist rating"),
+            "raal" : ("RatingAl", "Album rating"),
+            "rag"  : ("RatingGe", "Genre rating") }
 
 class CustomException(Exception):
     pass
@@ -94,15 +97,38 @@ class RegexRule(AbstractRule):
     def __match__(self, value):
         return self.getOperator()(self.value, value, self.reFlags)
         
+class NumberRule(AbstractRule):
+    """ Search according to a simple number comparison, for instance:
+               greater or equal than 30         -->   >=#30#
+               lesser than 80                   -->   <#80# """
+    
+    OPERATORS = { '=' : operator.eq,
+                  '<' : operator.lt,
+                  '>' : operator.gt,
+                  '>=' : operator.ge,
+                  '<=' : operator.ge }
+    
+    def __init__(self, key, operator, delimiter, value, flags):
+        AbstractRule.__init__(self, key, operator,
+                              delimiter, value, flags)
+        self.number = float(value)
+        
+    def __match__(self, value):
+        if not value:
+            value = 0
+        return self.getOperator()(float(value), self.number)
+        
 class TimeDeltaRule(AbstractRule):
     """ Match according to a timedelta, for instance:
-               in the last 3 days   -->   <%3days%
+               in the last 3 days   -->   <=%3days%
                before last month    -->   >%1month%
                3 years ago          -->   =%3years% """
     
     OPERATORS = { '=' : operator.eq,
-                  '<' : operator.le,
-                  '>' : operator.ge }
+                  '<' : operator.lt,
+                  '>' : operator.gt,
+                  '>=' : operator.ge,
+                  '<=' : operator.ge }
     
     TIME_DELTA_REGEX = r'(?P<number>\d+)\s*(?P<unit>\w+)'
 
@@ -127,13 +153,15 @@ class TimeDeltaRule(AbstractRule):
 
 class TimeStampRule(AbstractRule):
     """ Match according to a timestamp, for instance:
-               before 2010-01-02   -->   <@2010-01-02@
-               after  2009-12-20   -->   >@2009-12-20@
-               on     2009-11-18   -->   =@2009-11-18@ """
+               before 2010-01-02            -->   <@2010-01-02@
+               after  2009-12-20 (included) -->   >@2009-12-20@
+               on     2009-11-18            -->   =@2009-11-18@ """
     
     OPERATORS = { '=' : operator.eq,
-                  '<' : operator.le,
-                  '>' : operator.ge }
+                  '<' : operator.lt,
+                  '>' : operator.gt,
+                  '>=' : operator.ge,
+                  '<=' : operator.ge }
     
     TIME_STAMP_FORMAT = '%Y-%m-%d'
 
@@ -154,11 +182,12 @@ class TimeStampRule(AbstractRule):
 class RuleFactory:
     DELIMITER_TO_RULE = { '/' : RegexRule,
                           '%' : TimeDeltaRule,
-                          '@' : TimeStampRule }
+                          '@' : TimeStampRule,
+                          '#' : NumberRule }
 
     @staticmethod
     def getRule(ruleString):
-        m = re.match(r'(?P<key>\w+)(?P<operator>.)(?P<delimiter>[' +
+        m = re.match(r'(?P<key>\w+)(?P<operator>.+?)(?P<delimiter>[' +
                      ''.join(RuleFactory.DELIMITER_TO_RULE.keys()) +
                      r'])(?P<value>.+)\3(?P<flags>\w+)?',
                      ruleString)
@@ -225,7 +254,9 @@ class Playlist:
         self.setM3u()
 
     def setM3u(self):
-        self.m3u = '\n'.join([ track.file for track in self.tracks ])
+        l = [ track.file for track in self.tracks ]
+        l.sort()
+        self.m3u = '\n'.join(l)
 
     def getM3uPath(self):
         return os.path.join(self.PLAYLIST_DIR, self.name + ".m3u")
@@ -337,12 +368,21 @@ class MpdDB:
 
         curs = conn.cursor()
 
-        curs.execute('SELECT uri, rating FROM song WHERE rating > 0', ())
+        curs.execute('''
+SELECT song.uri, song.rating, artist.rating, album.rating, genre.rating
+FROM song, artist, album, genre
+WHERE song.artist = artist.name
+AND song.album = album.name
+AND song.genre = genre.name
+AND song.rating + artist.rating + album.rating + genre.rating > 0''', ())
 
         for row in curs:
             filePath = row[0]
             if filePath in self.tracks:
-                self.tracks[filePath].rating = str(row[1])
+                self.tracks[filePath].rating = row[1]
+                self.tracks[filePath].ratingar = row[2]
+                self.tracks[filePath].ratingal = row[3]
+                self.tracks[filePath].ratingge = row[4]
 
     def getTracks(self):
         return self.tracks.values()
@@ -550,7 +590,8 @@ if __name__ == '__main__':
           playlist.findMatchingTracks(mpdDB)
 
           if not dataDir: # stdout
-              print playlist.m3u.encode('utf-8')
+              if playlist.m3u:
+                  print playlist.m3u.encode('utf-8')
           else: # write to .m3u & save
               playlist.writeM3u()
               playlist.save()
