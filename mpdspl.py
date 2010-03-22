@@ -12,6 +12,8 @@
 import codecs, cPickle, datetime, operator, optparse
 import os, os.path, sqlite3, sys, re, textwrap, time
 
+DEFAULT_ENCODING = 'utf-8'
+
 DEFAULT_MDP_CONFIG_FILE = "/etc/mpd.conf"
 
 # There is an environmental variable XDG_CACHE_HOME which specifies where to
@@ -72,7 +74,8 @@ class AbstractRule:
         return self.OPERATORS[self.operator]
     
     def match(self, track):
-        matched = self.__match__(getattr(track, self.key.lower()))
+        attr = getattr(track, self.key.lower())
+        matched = self.__match__(attr)
 
         if self.negate:
             matched = not matched
@@ -95,6 +98,10 @@ class RegexRule(AbstractRule):
             self.reFlags |= self.FLAGS[reFlag]
 
     def __match__(self, value):
+        try:
+            value = str(value)
+        except:
+            value = value.encode(DEFAULT_ENCODING)
         return self.getOperator()(self.value, value, self.reFlags)
         
 class NumberRule(AbstractRule):
@@ -264,7 +271,7 @@ class Playlist:
     def writeM3u(self):
         filePath = self.getM3uPath()
         print "Saving playlist '%s' to '%s'" % (playlist.name, filePath)
-        codecs.open(filePath, 'w', 'utf-8').write(self.m3u + '\n')
+        codecs.open(filePath, 'w', DEFAULT_ENCODING).write(self.m3u + '\n')
 
 class PlaylistSet:
     def __init__(self, playlists):
@@ -283,6 +290,9 @@ class Track:
         # create a track object with only empty attributes
         for key in KEYWORDS.values():
             setattr(self, key[0].lower(), "")
+
+    def __repr__(self):
+        return ("%(artist)s - %(album)s - %(track)s - %(title)s" % self.__dict__).encode(DEFAULT_ENCODING)
 
 class MpdDB:
     CACHE_FILE = None # where to save marshalled DB
@@ -331,7 +341,7 @@ class MpdDB:
         parsing = False
 
         track = None
-        for line in codecs.open(self.dbFile, 'r', 'utf-8'):
+        for line in codecs.open(self.dbFile, 'r', DEFAULT_ENCODING):
             line = line.strip()
 
             if line == "songList begin": # enter parsing mode
@@ -591,7 +601,7 @@ if __name__ == '__main__':
 
           if not dataDir: # stdout
               if playlist.m3u:
-                  print playlist.m3u.encode('utf-8')
+                  print playlist.m3u.encode(DEFAULT_ENCODING)
           else: # write to .m3u & save
               playlist.writeM3u()
               playlist.save()
