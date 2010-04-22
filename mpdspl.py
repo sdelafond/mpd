@@ -84,9 +84,11 @@ class AbstractRule:
 class RegexRule(AbstractRule):
     """ Search according to a regex, for instance:
                contains foo                     -->   =/foo/
-               contains bar, case-insensitive   -->   =/bar/i """
+               contains bar, case-insensitive   -->   =/bar/i
+               does not contain baz             -->   !/foo/ """
     
-    OPERATORS = { '=' : re.search }
+    OPERATORS = { '=' : re.search,
+                  '!' : lambda *v: not re.search(*v) }
     FLAGS = { 'i' : re.IGNORECASE,
               'l' : re.LOCALE }
     
@@ -105,7 +107,7 @@ class RegexRule(AbstractRule):
         return self.getOperator()(self.value, value, self.reFlags)
         
 class NumberRule(AbstractRule):
-    """ Search according to a simple number comparison, for instance:
+    """ Match according to a number comparison, for instance:
                greater or equal than 30         -->   >=#30#
                lesser than 80                   -->   <#80# """
     
@@ -436,7 +438,7 @@ def parseargs(args):
         include the word 'when' (case-insensitive), and whose modification
         time was in the last 3 days would be written:
 
-          ar=/(Fred|George)/ ti=/(the.*and|and.*the)/i ti=/when/i mt<%3days%
+          ar=/(Fred|George)/ , ti=/(the.*and|and.*the)/i , ti!/when/i , mt<%3days%
           
     Notes:
         Paths specified in the MPD config file containing a '~' will have the
