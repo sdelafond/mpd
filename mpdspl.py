@@ -154,16 +154,17 @@ class TimeDeltaRule(AbstractRule):
         if not self.unit.endswith('s'):
             self.unit += 's'
 
-        self.timeDelta = datetime.timedelta(**{self.unit : self.number})
-        self.value = self.timeDelta.seconds
+        self.value = datetime.timedelta(**{self.unit : self.number})
+        self.now = datetime.datetime.now()
 
     def __match__(self, value):
-        return self.getOperator()(int(value), self.value)
+        delta = self.now - datetime.datetime.fromtimestamp(int(value))
+        return self.getOperator()(delta, self.value)
 
 class TimeStampRule(AbstractRule):
     """ Match according to a timestamp, for instance:
                before 2010-01-02            -->   <@2010-01-02@
-               after  2009-12-20 (included) -->   >@2009-12-20@
+               after  2009-12-20 (included) -->   >=@2009-12-20@
                on     2009-11-18            -->   =@2009-11-18@ """
     
     OPERATORS = { '=' : operator.eq,
