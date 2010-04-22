@@ -139,7 +139,7 @@ class TimeDeltaRule(AbstractRule):
                   '>=' : operator.ge,
                   '<=' : operator.ge }
     
-    TIME_DELTA_REGEX = r'(?P<number>\d+)\s*(?P<unit>\w+)'
+    TIME_DELTA_REGEX = r'(?P<number>\d+)\s*(?P<unit>[a-zA-Z]+)'
 
     def __init__(self, key, operator, delimiter, value, flags):
         AbstractRule.__init__(self, key, operator,
