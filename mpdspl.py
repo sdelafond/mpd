@@ -44,7 +44,8 @@ KEYWORDS = {"ar"   : ("Artist", "Artist"),
             "ra"   : ("Rating", "Track rating"),
             "raar" : ("RatingAr", "Artist rating"),
             "raal" : ("RatingAl", "Album rating"),
-            "rag"  : ("RatingGe", "Genre rating") }
+            "rag"  : ("RatingGe", "Genre rating"),
+            "pc"   : ("PlayCount", "Play Count") }
 
 class CustomException(Exception):
     pass
@@ -199,7 +200,7 @@ class RuleFactory:
     def getRule(ruleString):
         m = re.match(r'(?P<key>\w+)(?P<operator>.+?)(?P<delimiter>[' +
                      ''.join(RuleFactory.DELIMITER_TO_RULE.keys()) +
-                     r'])(?P<value>.+)\3(?P<flags>\w+)?',
+                     r'])(?P<value>.+).(?P<flags>\w+)?',
                      ruleString)
         if not m:
             raise CustomException("Could not parse rule '%s'" % (ruleString,))
@@ -261,11 +262,11 @@ class Playlist:
             if toAdd:
                 self.tracks.append(track)
 
+        self.tracks.sort()
         self.setM3u()
 
     def setM3u(self):
         l = [ track.file for track in self.tracks ]
-        l.sort()
         self.m3u = '\n'.join(l)
 
     def getM3uPath(self):
@@ -293,6 +294,10 @@ class Track:
         # create a track object with only empty attributes
         for key in KEYWORDS.values():
             setattr(self, key[0].lower(), "")
+
+    def __cmp__(self, t2):
+        return cmp(self.artist +self.album + self.title,
+                   t2.artist + t2.album + t2.title)
 
     def __repr__(self):
         return ("%(artist)s - %(album)s - %(track)s - %(title)s" % self.__dict__).encode(DEFAULT_ENCODING)
@@ -382,7 +387,7 @@ class MpdDB:
         curs = conn.cursor()
 
         curs.execute('''
-SELECT song.uri, song.rating, artist.rating, album.rating, genre.rating
+SELECT song.uri, song.rating, artist.rating, album.rating, genre.rating, song.play_count
 FROM song, artist, album, genre
 WHERE song.artist = artist.name
 AND song.album = album.name
@@ -396,6 +401,7 @@ AND song.rating + artist.rating + album.rating + genre.rating > 0''', ())
                 self.tracks[filePath].ratingar = row[2]
                 self.tracks[filePath].ratingal = row[3]
                 self.tracks[filePath].ratingge = row[4]
+                self.tracks[filePath].playcount = row[5]
 
     def getTracks(self):
         return self.tracks.values()
@@ -427,7 +433,7 @@ def parseargs(args):
 
         RuleFactory.help() + \
 
-        """        These available keywords are:
+        """\n        These available keywords are:
 """ + \
 
         '\n'.join([ "            " + k + "/" + v[0] + " : " + v[1].lower() for k, v in KEYWORDS.iteritems() ]) + \
