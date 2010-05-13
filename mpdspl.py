@@ -138,7 +138,7 @@ class TimeDeltaRule(AbstractRule):
                   '<' : operator.lt,
                   '>' : operator.gt,
                   '>=' : operator.ge,
-                  '<=' : operator.ge }
+                  '<=' : operator.le }
     
     TIME_DELTA_REGEX = r'(?P<number>\d+)\s*(?P<unit>[a-zA-Z]+)'
 
@@ -172,7 +172,7 @@ class TimeStampRule(AbstractRule):
                   '<' : operator.lt,
                   '>' : operator.gt,
                   '>=' : operator.ge,
-                  '<=' : operator.ge }
+                  '<=' : operator.le }
     
     TIME_STAMP_FORMAT = '%Y-%m-%d'
 
