@@ -15,7 +15,7 @@ MP3_ROOT = os.path.expanduser('/data/mp3s/done')
 # Playlists (mpd_name, ipod_name)
 #PLAYLISTS = [('Recent & Not iPod', 'Test'), ]
 #PLAYLISTS = [('Audrey Mom', 'Test'), ]
-PLAYLISTS = [('Test', 'Test'), ]
+PLAYLISTS = [('run', 'run'), ]
 
 # Covers dir
 COVERS_DIR = os.path.expanduser('~/.covers/')
@@ -110,6 +110,7 @@ class iPod(object):
         cover = os.path.join(COVERS_DIR, t['artist'],
                              "%s.jpg" % (t['album'], ))
         if os.path.isfile(cover):
+            print "Setting cover for %s" % (filename,)
             t.set_coverart_from_file(cover)
         return t
 
