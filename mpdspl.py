@@ -200,7 +200,7 @@ class RuleFactory:
     def getRule(ruleString):
         m = re.match(r'(?P<key>\w+)(?P<operator>.+?)(?P<delimiter>[' +
                      ''.join(RuleFactory.DELIMITER_TO_RULE.keys()) +
-                     r'])(?P<value>.+).(?P<flags>\w+)?',
+                     r'])(?P<value>.+)(?P=delimiter)(?P<flags>\w+)?',
                      ruleString)
         if not m:
             raise CustomException("Could not parse rule '%s'" % (ruleString,))
