@@ -522,6 +522,9 @@ def parseargs(args):
         if key in dir(options) and getattr(options, key):
             configDict[key] = getattr(options, key)
 
+    if not 'stickerFile' in configDict: # need to have this one defined
+        configDict['stickerFile'] = None
+
     return options.forceUpdate, options.cacheFile, options.dataDir, \
            configDict['dbFile'], configDict['stickerFile'], \
            options.mpdcronStatsFile, \
