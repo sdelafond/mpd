@@ -67,7 +67,10 @@ class iPod(object):
                     if not compare_tracks(track, playlist[i]):
                         to_del = playlist[i]
                         playlist.remove(to_del)
-                        self.db.Master.remove(to_del)
+                        try:
+                            self.db.Master.remove(to_del)
+                        except:
+                            print "** Problem removing %s" % (track,)
                         playlist.add(track, pos = i)
                 if len(playlist) - 1 > i:
                     for track in playlist[i + 1:]:
@@ -107,11 +110,15 @@ class iPod(object):
                 return track
         print "New file: %s" % filename
         t = self.db.new_Track(filename = filename)
-        cover = os.path.join(COVERS_DIR, t['artist'],
+        try:
+            cover = os.path.join(COVERS_DIR, t['artist'],
                              "%s.jpg" % (t['album'], ))
-        if os.path.isfile(cover):
-            print "Setting cover for %s" % (filename,)
-            t.set_coverart_from_file(cover)
+            if os.path.isfile(cover):
+                print "Setting cover for %s" % (filename,)
+                t.set_coverart_from_file(cover)
+        except:
+            pass
+
         return t
 
 # mpd code (move to different file when it gets too complex)
