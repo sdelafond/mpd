@@ -1,10 +1,5 @@
 import gpod, os
 
-# Safety factor, in gigabytes
-SIZE_FUDGE = 0.4
-
-# Code
-
 def compare_tracks(a, b):
     return ( #a['size'] == b['size'] and
             a['title'] == b['title'] and
@@ -14,6 +9,9 @@ def compare_tracks(a, b):
 class FreeSpaceException(Exception): pass
 
 class iPod(object):
+
+    SIZE_FUDGE = 0.4 # safety factor, in gigabytes
+
     def __init__(self, path):
         self.path = path
         self.db = gpod.Database(self.path)
@@ -34,8 +32,8 @@ class iPod(object):
         device = gpod.itdb_device_new()
         gpod.itdb_device_set_mountpoint(device, mountpoint)
         info = gpod.itdb_device_get_ipod_info(device)
-        print "Capacity: %i" % int((info.capacity - SIZE_FUDGE) * 1024 * 1024 * 1024)
-        return int((info.capacity - SIZE_FUDGE) * 1024 * 1024 * 1024)
+        print "Capacity: %i" % int((info.capacity - iPod.SIZE_FUDGE) * 1024 * 1024 * 1024)
+        return int((info.capacity - iPod.SIZE_FUDGE) * 1024 * 1024 * 1024)
 
     def free_space(self):
           return self.ipod_capacity() - self.used_space()
