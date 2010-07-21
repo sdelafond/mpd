@@ -1,34 +1,9 @@
-import gpod, mpd, os
-
-# iPod mount point (make sure it's properly mounted)
-MOUNT_POINT = '/media/usb0'
+import gpod, os
 
 # Safety factor, in gigabytes
 SIZE_FUDGE = 0.4
 
-# mpd host, port
-MPD_CONNECTION = ('localhost', 6602)
-
-# mpd root directory
-MP3_ROOT = os.path.expanduser('/data/mp3s/done')
-
-# Playlists (mpd_name, ipod_name)
-#PLAYLISTS = [('Recent & Not iPod', 'Test'), ]
-#PLAYLISTS = [('Audrey Mom', 'Test'), ]
-PLAYLISTS = [('run', 'run'), ]
-
-# Covers dir
-COVERS_DIR = os.path.expanduser('~/.covers/')
-
 # Code
-def ipod_capacity(mountpoint = MOUNT_POINT):
-    if not os.path.exists(mountpoint):
-        raise ValueError("Mount point does not exist")
-    device = gpod.itdb_device_new()
-    gpod.itdb_device_set_mountpoint(device, mountpoint)
-    info = gpod.itdb_device_get_ipod_info(device)
-    print "Capacity: %i" % int((info.capacity - SIZE_FUDGE) * 1024 * 1024 * 1024)
-    return int((info.capacity - SIZE_FUDGE) * 1024 * 1024 * 1024)
 
 def compare_tracks(a, b):
     return ( #a['size'] == b['size'] and
@@ -39,7 +14,7 @@ def compare_tracks(a, b):
 class FreeSpaceException(Exception): pass
 
 class iPod(object):
-    def __init__(self, path = MOUNT_POINT):
+    def __init__(self, path):
         self.path = path
         self.db = gpod.Database(self.path)
 
@@ -53,8 +28,17 @@ class iPod(object):
         print "Used: %i" % size
         return size
 
+    def ipod_capacity(self):
+        if not os.path.exists(self.path):
+            raise ValueError("Mount point does not exist")
+        device = gpod.itdb_device_new()
+        gpod.itdb_device_set_mountpoint(device, mountpoint)
+        info = gpod.itdb_device_get_ipod_info(device)
+        print "Capacity: %i" % int((info.capacity - SIZE_FUDGE) * 1024 * 1024 * 1024)
+        return int((info.capacity - SIZE_FUDGE) * 1024 * 1024 * 1024)
+
     def free_space(self):
-          return ipod_capacity(self.path) - self.used_space()
+          return self.ipod_capacity() - self.used_space()
 
     def sync_playlist(self, name, tracks):
         for playlist in self.db.Playlists:
@@ -120,28 +104,3 @@ class iPod(object):
             pass
 
         return t
-
-# mpd code (move to different file when it gets too complex)
-
-def get_filenames(mpd_playlist):
-    client = mpd.MPDClient()
-    client.connect(*MPD_CONNECTION)
-    return [ os.path.join(MP3_ROOT, filename)
-             for filename in client.listplaylist(mpd_playlist) ]
-
-def sync(ipod, playlists):
-    for mpd_playlist, ipod_playlist in playlists:
-        tracks = [ ipod.track_factory(filename)
-                   for filename in get_filenames(mpd_playlist) ]
-        if not ipod.check_freespace(tracks):
-            raise FreeSpaceException("Not enough free space!")
-        ipod.sync_playlist(ipod_playlist, tracks)
-    return True
-
-def main():
-    ipod = iPod(MOUNT_POINT)
-    sync(ipod, PLAYLISTS)
-    ipod.close()
-
-if __name__ == '__main__':
-     main()
