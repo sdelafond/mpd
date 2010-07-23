@@ -18,6 +18,7 @@ def main():
   filenames = []
 
   for playlist in playlists:
+    os.system('adb shell mkdir "/sdcard/mp3s/%s"' % (playlist,))
     filenames = mpdutils.get_filenames(playlist, MPD_CONNECTION, MP3_ROOT)
     for f in filenames:
       print f
