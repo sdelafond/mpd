@@ -15,8 +15,14 @@ COVERS_DIR = os.path.expanduser('~/.covers/')
 
 def sync(ipod, playlists):
     for mpd_playlist, ipod_playlist in playlists:
-        tracks = [ ipod.track_factory(filename)
-                   for filename in mpdutils.get_filenames(mpd_playlist) ]
+        tracks = []
+        for filename in mpdutils.get_filenames(mpd_playlist,
+                                               MPD_CONNECTION,
+                                               MP3_ROOT):
+            track = ipod.track_factory(filename)
+            if track:
+                tracks.append(track)
+
         if not ipod.check_freespace(tracks):
             raise FreeSpaceException("Not enough free space!")
         ipod.sync_playlist(ipod_playlist, tracks)

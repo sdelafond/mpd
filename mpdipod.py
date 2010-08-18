@@ -30,7 +30,7 @@ class iPod(object):
         if not os.path.exists(self.path):
             raise ValueError("Mount point does not exist")
         device = gpod.itdb_device_new()
-        gpod.itdb_device_set_mountpoint(device, mountpoint)
+        gpod.itdb_device_set_mountpoint(device, self.path)
         info = gpod.itdb_device_get_ipod_info(device)
         print "Capacity: %i" % int((info.capacity - iPod.SIZE_FUDGE) * 1024 * 1024 * 1024)
         return int((info.capacity - iPod.SIZE_FUDGE) * 1024 * 1024 * 1024)
@@ -75,7 +75,11 @@ class iPod(object):
 
     def track_factory(self, filename):
         print filename
-        _track = gpod.Track(filename)
+        try:
+            _track = gpod.Track(filename)
+        except:
+            print "FAIL !!!"
+            return None
 
         debug = False
         if filename.find('Mama') > 0:
