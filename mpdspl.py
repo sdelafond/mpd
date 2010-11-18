@@ -392,7 +392,7 @@ FROM song, artist, album, genre
 WHERE song.artist = artist.name
 AND song.album = album.name
 AND song.genre = genre.name
-AND song.rating + artist.rating + album.rating + genre.rating > 0''', ())
+AND song.rating + artist.rating + album.rating + genre.rating + song.play_count > 0''', ())
 
         for row in curs:
             filePath = row[0]
