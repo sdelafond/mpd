@@ -1,9 +1,6 @@
 import os, os.path, sys
 import mpdutils
 
-# iPod mount point (make sure it's properly mounted)
-MOUNT_POINT = '/media/usb0'
-
 # mpd host, port
 MPD_CONNECTION = ('localhost', 6602)
 
