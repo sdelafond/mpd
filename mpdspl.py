@@ -12,9 +12,10 @@
 import codecs, cPickle, datetime, operator, optparse
 import os, os.path, sqlite3, sys, re, textwrap, time
 
-DEFAULT_ENCODING = 'utf-8'
+import mpd
 
-DEFAULT_MDP_CONFIG_FILE = "/etc/mpd.conf"
+DEFAULT_HOST = 'localhost'
+DEFAULT_PORT = '6600'
 
 # There is an environmental variable XDG_CACHE_HOME which specifies where to
 # save cache files. However, if not set, a default of ~/.cache should be used.
@@ -101,10 +102,7 @@ class RegexRule(AbstractRule):
             self.reFlags |= self.FLAGS[reFlag]
 
     def __match__(self, value):
-        try:
-            value = str(value)
-        except:
-            value = value.encode(DEFAULT_ENCODING)
+        value = str(value)
         return self.getOperator()(self.value, value, self.reFlags)
         
 class NumberRule(AbstractRule):
@@ -159,7 +157,7 @@ class TimeDeltaRule(AbstractRule):
         self.now = datetime.datetime.now()
 
     def __match__(self, value):
-        delta = self.now - datetime.datetime.fromtimestamp(int(value))
+        delta = self.now - datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
         return self.getOperator()(delta, self.value)
 
 class TimeStampRule(AbstractRule):
@@ -275,7 +273,7 @@ class Playlist:
     def writeM3u(self):
         filePath = self.getM3uPath()
         print "Saving playlist '%s' to '%s'" % (playlist.name, filePath)
-        codecs.open(filePath, 'w', DEFAULT_ENCODING).write(self.m3u + '\n')
+        open(filePath, 'w').write(self.m3u + '\n')
 
 class PlaylistSet:
     def __init__(self, playlists):
@@ -290,24 +288,33 @@ class PlaylistSet:
         return self.playlists.values()
 
 class Track:
-    def __init__(self):
-        # create a track object with only empty attributes
+    def __init__(self, track = None):
+        # first, create a track object with only empty attributes
         for key in KEYWORDS.values():
             setattr(self, key[0].lower(), "")
 
+        # fill in with the optional parameter's attributes
+        for key, value in track.iteritems():
+            if isinstance(value, list):
+                value = value[0]
+            if key == 'last-modified':
+                key = 'mtime'
+            setattr(self, key.lower(), value)
+
     def __cmp__(self, t2):
-        return cmp(self.artist +self.album + self.title,
+        return cmp(self.artist + self.album + self.title,
                    t2.artist + t2.album + t2.title)
 
     def __repr__(self):
-        return ("%(artist)s - %(album)s - %(track)s - %(title)s" % self.__dict__).encode(DEFAULT_ENCODING)
+        return ("%(artist)s - %(album)s - %(track)s - %(title)s" % self.__dict__)
 
 class MpdDB:
     CACHE_FILE = None # where to save marshalled DB
     
-    def __init__(self, dbFile,
+    def __init__(self, host, port,
                  stickerFile = None, mpdcronStatsFile = None):
-        self.dbFile = dbFile
+        self.host = host
+        self.port = port
         self.stickerFile = stickerFile
         self.mpdcronStatsFile = mpdcronStatsFile
         self.tracks = {}
@@ -337,36 +344,16 @@ class MpdDB:
     def save(self):
         savegubbage(self, MpdDB.CACHE_FILE)
 
-    @staticmethod
-    def needUpdate(dbFile, extraFile):
-        return (not os.path.isfile(MpdDB.CACHE_FILE) \
-                or os.path.getmtime(dbFile) > os.path.getmtime(MpdDB.CACHE_FILE) \
-                or (extraFile \
-                    and os.path.isfile(extraFile) \
-                    and os.path.getmtime(extraFile) > os.path.getmtime(MpdDB.CACHE_FILE)))
-        
     def __parseDB(self):
-        parsing = False
+        client = mpd.MPDClient()
+        client.connect(self.host, self.port)
+        client.iterate = True
 
-        track = None
-        for line in codecs.open(self.dbFile, 'r', DEFAULT_ENCODING):
-            line = line.strip()
-
-            if line == "songList begin": # enter parsing mode
-                parsing = True
+        for track in client.listallinfo():
+            if not 'file' in track:
                 continue
-            if line == "songList end": # exit parsing mode
-                parsing = False
-                continue
-
-            if parsing:
-                if line.startswith("key: "):
-                    if track is not None: # save the previous one
-                        self.tracks[track.file] = track
-                    track = Track() # create a new one
-
-                key, value = line.split(": ", 1)
-                setattr(track, key.lower(), value)
+            track = Track(track)
+            self.tracks[track.file] = track
 
     def __parseStickerDB(self):
         conn = sqlite3.connect(self.stickerFile)
@@ -421,7 +408,7 @@ class IndentedHelpFormatterWithNL(optparse.IndentedHelpFormatter):
         result = "\n".join(formatted_bits) + "\n"
         return result 
 
-def parseargs(args):
+def parseArgs(args):
     parser = optparse.OptionParser(formatter=IndentedHelpFormatterWithNL(),
                                    description="""Playlist ruleset:
         Each ruleset is made of several rules, separated by commas.
@@ -464,9 +451,11 @@ def parseargs(args):
                       help="Location of the data directory (where we save playlist info)",
                       metavar="DIR")
 
-    parser.add_option("-d", "--database-file", dest="dbFile", 
-                      help="Location of the MPD database file",
-                      metavar="FILE")
+    parser.add_option("-H", "--host", dest="host", help="Host MPD runs on",
+                      default=DEFAULT_HOST, metavar="HOST")
+
+    parser.add_option("-P", "--port", dest="port", help="Port MPD runs on",
+                      default=DEFAULT_PORT, metavar="PORT")
 
     parser.add_option("-s", "--sticker-file", dest="stickerFile",
                       help="Location of the MPD sticker file (holding ratings)",
@@ -475,11 +464,6 @@ def parseargs(args):
     parser.add_option("-m", "--mpdcron-stats-file", dest="mpdcronStatsFile",
                       help="Location of the mpdcron stats file (holding ratings and other info)",
                       default=None,
-                      metavar="FILE")
-
-    parser.add_option("-c", "--config-file", dest="configFile",
-                      default=DEFAULT_MDP_CONFIG_FILE,
-                      help="Location of the MPD config file",
                       metavar="FILE")
 
     parser.add_option("-p", "--playlist-dir", dest="playlistDirectory",
@@ -495,7 +479,7 @@ def parseargs(args):
                       metavar="NAME 'RULESET'")
 
     parser.add_option("-o", "--output-only", dest="simpleOutput",
-                      action="store_true", default=False,
+                      action="store", default='',
                       help="Only print the final track list to STDOUT")
 
     options, args = parser.parse_args(args)
@@ -514,21 +498,13 @@ def parseargs(args):
         playlists[name] = Playlist(name, ruleSet)
     options.playlists = playlists
 
-    configDict = parsempdconf(os.path.expanduser(options.configFile),
-                              options.mpdUser)
-
-    # CL arguments take precedence over config file settings
-    for key in configDict:
-        if key in dir(options) and getattr(options, key):
-            configDict[key] = getattr(options, key)
-
-    if not 'stickerFile' in configDict: # need to have this one defined
-        configDict['stickerFile'] = None
+    if options.simpleOutput:
+        options.playlists['stdout'] = Playlist('stdout', options.simpleOutput)
 
     return options.forceUpdate, options.cacheFile, options.dataDir, \
-           configDict['dbFile'], configDict['stickerFile'], \
+           options.host, options.port, options.stickerFile, \
            options.mpdcronStatsFile, \
-           configDict['playlistDirectory'], options.playlists
+           options.playlistDirectory, options.playlists
 
 def _underscoreToCamelCase(s):
     tokens = s.split('_')
@@ -571,21 +547,16 @@ def loadgubbage(path):
 if __name__ == '__main__':
    try:
       forceUpdate, cacheFile, dataDir, \
-                   dbFile, stickerFile, \
+                   host, port, stickerFile, \
                    mpdcronStatsFile, \
-                   playlistDir, playlists = parseargs(sys.argv[1:])
+                   playlistDir, playlists = parseArgs(sys.argv[1:])
 
       MpdDB.initStaticAttributes(cacheFile)
       Playlist.initStaticAttributes(playlistDir, dataDir)
 
       playlistSet = PlaylistSet(playlists)
 
-      if not os.path.isfile(dbFile): # no dbFile -> abort
-          raise CustomException("The database file '%s' could not be found" %
-                                (dbFile,))
-
-      if forceUpdate or MpdDB.needUpdate(dbFile,
-                                         mpdcronStatsFile or stickerFile): # update cache
+      if forceUpdate:
           if dataDir:
               print "Updating database cache..."
 
@@ -594,9 +565,9 @@ if __name__ == '__main__':
 
           # create the MPD DB object
           if mpdcronStatsFile:
-              mpdDB = MpdDB(dbFile, mpdcronStatsFile=mpdcronStatsFile)
+              mpdDB = MpdDB(host, port, mpdcronStatsFile=mpdcronStatsFile)
           else:
-              mpdDB = MpdDB(dbFile, stickerFile=stickerFile)
+              mpdDB = MpdDB(host, port, stickerFile=stickerFile)
               
           mpdDB.save() # save to file
       else: # we have a valid cache file, use it
@@ -613,7 +584,7 @@ if __name__ == '__main__':
 
           if not dataDir: # stdout
               if playlist.m3u:
-                  print playlist.m3u.encode(DEFAULT_ENCODING)
+                  print playlist.m3u
           else: # write to .m3u & save
               playlist.writeM3u()
               playlist.save()
