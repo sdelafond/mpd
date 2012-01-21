@@ -157,7 +157,10 @@ class TimeDeltaRule(AbstractRule):
         self.now = datetime.datetime.now()
 
     def __match__(self, value):
-        delta = self.now - datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+        try:
+            delta = self.now - datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+        except:
+            delta = self.now - datetime.datetime.fromtimestamp(float(value))
         return self.getOperator()(delta, self.value)
 
 class TimeStampRule(AbstractRule):
