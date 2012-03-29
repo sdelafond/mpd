@@ -77,6 +77,9 @@ class AbstractRule:
     
     def match(self, track):
         attr = getattr(track, self.key.lower())
+        if not attr:
+            return False
+        
         matched = self.__match__(attr)
 
         if self.negate:
