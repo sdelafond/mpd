@@ -77,8 +77,6 @@ class AbstractRule:
     
     def match(self, track):
         attr = getattr(track, self.key.lower())
-        if not attr:
-            return False
         
         matched = self.__match__(attr)
 
@@ -160,6 +158,8 @@ class TimeDeltaRule(AbstractRule):
         self.now = datetime.datetime.now()
 
     def __match__(self, value):
+        if not value:
+            value = 0
         try:
             delta = self.now - datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
         except:
