@@ -317,10 +317,11 @@ class Track:
 class MpdDB:
     CACHE_FILE = None # where to save marshalled DB
     
-    def __init__(self, host, port,
+    def __init__(self, host, port, password = None,
                  stickerFile = None, mpdcronStatsFile = None):
         self.host = host
         self.port = port
+        self.password = password
         self.stickerFile = stickerFile
         self.mpdcronStatsFile = mpdcronStatsFile
         self.tracks = {}
@@ -353,6 +354,8 @@ class MpdDB:
     def __parseDB(self):
         client = mpd.MPDClient()
         client.connect(self.host, self.port)
+        if self.password:
+            client.password(self.password)
         client.iterate = True
 
         for track in client.listallinfo():
@@ -488,6 +491,10 @@ def parseArgs(args):
                       action="store", default='',
                       help="Only print the final track list to STDOUT")
 
+    parser.add_option("-w", "--password", dest="password",
+                      default=None, help="Password to connect to MPD",
+                      metavar="PASSWORD")
+
     options, args = parser.parse_args(args)
 
     if getattr(options, "mpdcronStatsFile") and getattr(options, "stickerFile"):
@@ -510,7 +517,7 @@ def parseArgs(args):
     return options.forceUpdate, options.cacheFile, options.dataDir, \
            options.host, options.port, options.stickerFile, \
            options.mpdcronStatsFile, \
-           options.playlistDirectory, options.playlists
+           options.playlistDirectory, options.playlists, options.password
 
 def _underscoreToCamelCase(s):
     tokens = s.split('_')
@@ -555,7 +562,7 @@ if __name__ == '__main__':
       forceUpdate, cacheFile, dataDir, \
                    host, port, stickerFile, \
                    mpdcronStatsFile, \
-                   playlistDir, playlists = parseArgs(sys.argv[1:])
+                   playlistDir, playlists, password = parseArgs(sys.argv[1:])
 
       MpdDB.initStaticAttributes(cacheFile)
       Playlist.initStaticAttributes(playlistDir, dataDir)
@@ -571,9 +578,9 @@ if __name__ == '__main__':
 
           # create the MPD DB object
           if mpdcronStatsFile:
-              mpdDB = MpdDB(host, port, mpdcronStatsFile=mpdcronStatsFile)
+              mpdDB = MpdDB(host, port, password, mpdcronStatsFile=mpdcronStatsFile)
           else:
-              mpdDB = MpdDB(host, port, stickerFile=stickerFile)
+              mpdDB = MpdDB(host, port, password, stickerFile=stickerFile)
               
           mpdDB.save() # save to file
       else: # we have a valid cache file, use it
