@@ -362,7 +362,11 @@ class MpdDB:
             if not 'file' in track:
                 continue
             track = Track(track)
-            self.tracks[track.file] = track
+            try:
+                key = track.file.decode('utf-8')
+            except:
+                key = track.file
+            self.tracks[key] = track
 
     def __parseStickerDB(self):
         conn = sqlite3.connect(self.stickerFile)
