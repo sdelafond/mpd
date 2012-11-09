@@ -519,36 +519,6 @@ def parseArgs(args):
            options.mpdcronStatsFile, \
            options.playlistDirectory, options.playlists, options.password
 
-def _underscoreToCamelCase(s):
-    tokens = s.split('_')
-    s = tokens[0]
-    for token in tokens[1:]:
-        s += token.capitalize()
-    return s
-    
-# Grabbing stuff from the MPD config, a very important step
-def parsempdconf(configFile, user = None):
-    configDict = {}
-    for line in open(configFile, "r"):
-        line = line.strip()
-        if line and not re.search(r'[#{}]', line):
-            key, value = re.split(r'\s+', line, 1)
-
-            key = _underscoreToCamelCase(key)
-
-            value = re.sub(r'(^"|"$)', '', value)
-
-            # account for ~/ in mpd.conf
-            if value == '~' or value.count('~/') > 0: # FIXME: others ?
-                if user:
-                    value = value.replace('~', user)
-                else:
-                    value = os.path.expanduser(value)
-                    
-            configDict[key] = value
-
-    return configDict
-
 def savegubbage(data, path):
     if not os.path.isdir(os.path.dirname(path)):
         os.mkdir(os.path.dirname(path))
