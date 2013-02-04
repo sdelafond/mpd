@@ -11,8 +11,8 @@ MP3_ROOT = os.path.expanduser('/data/mp3s/done')
 # Covers dir
 COVERS_DIR = os.path.expanduser('~/.covers/')
 
-
-parser = optparse.OptionParser()
+# options parser
+parser = optparse.OptionParser(usage = "Usage: %prog [options] <playlist-name>")
 parser.add_option("-m", "--mount-point", dest="mountPoint",
                   metavar="MOUNT_POINT", default="/mnt",
                   help="Mount point for the android SD card")
