@@ -238,11 +238,12 @@ class Playlist:
 
     @staticmethod
     def load(name):
-        obj = loadgubbage(Playlist.getSaveFile(name))
+        playlistFile = Playlist.getSaveFile(name)
+        obj = loadgubbage(playlistFile)
         try:
             assert isinstance(obj, Playlist)
         except:
-            raise CustomException("Restoring old playlists won't work, please rm '%s'." % (playlistfile,))
+            raise CustomException("Restoring old playlists won't work, please rm '%s'." % (playlistFile,))
 
         return obj
 
