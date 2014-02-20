@@ -562,7 +562,7 @@ if __name__ == '__main__':
               print "Loading database cache..."
           mpdDB = MpdDB.load()
 
-      if dataDir: # add pre-existing playlists to our list
+      if dataDir and os.path.isdir(Playlist.CACHE_DIR): # add pre-existing playlists to our list
           for name in os.listdir(Playlist.CACHE_DIR):
               playlistSet.addMarshalled(name)
 
