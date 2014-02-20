@@ -337,8 +337,8 @@ class MpdDB:
 
     @staticmethod
     def load():
-        obj = loadgubbage(MpdDB.CACHE_FILE)
         try:
+            obj = loadgubbage(MpdDB.CACHE_FILE)
             assert isinstance(obj, MpdDB)
             tracks = obj.getTracks()
             if len(tracks) > 1:
@@ -557,7 +557,7 @@ if __name__ == '__main__':
               mpdDB = MpdDB(host, port, password, stickerFile=stickerFile)
               
           mpdDB.save() # save to file
-      else: # we have a valid cache file, use it
+      else: # we may have a valid cache file, let's try to use it
           if dataDir:
               print "Loading database cache..."
           mpdDB = MpdDB.load()
