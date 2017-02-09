@@ -130,8 +130,8 @@ class NumberRule(AbstractRule):
 class TimeDeltaRule(AbstractRule):
     """ Match according to a timedelta, for instance:
                in the last 3 days   -->   <=%3days%
-               before last month    -->   >%1month%
-               3 years ago          -->   =%3years% """
+               before last week     -->   >%1week%
+               10 hours ago         -->   =%10hours% """
     
     OPERATORS = { '=' : operator.eq,
                   '<' : operator.lt,
