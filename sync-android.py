@@ -3,7 +3,7 @@ import optparse, os, os.path, re, sys
 import mpdutils
 
 # mpd host, port
-MPD_CONNECTION = ('localhost', 6602)
+MPD_CONNECTION = ('localhost', 6600)
 
 # mpd root directory
 MP3_ROOT = os.path.expanduser('/data/mp3s/done')

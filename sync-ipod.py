@@ -5,7 +5,7 @@ import mpdipod, mpdutils
 MOUNT_POINT = '/media/usb0'
 
 # mpd host, port
-MPD_CONNECTION = ('localhost', 6602)
+MPD_CONNECTION = ('localhost', 660)
 
 # mpd root directory
 MP3_ROOT = os.path.expanduser('/data/mp3s/done')
